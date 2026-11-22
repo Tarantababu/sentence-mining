@@ -9,7 +9,7 @@ type Props = {
 };
 
 function PromptBody({ card }: { card: StudyCard }) {
-  const parts = card.prompt.split(/_{3,}|…{3,}/);
+  const parts = card.prompt.split(/_{3,}|…{3,}|_____+/);
   if (card.card_type === "fill_in_blank" && parts.length > 1) {
     return (
       <p className="text-[1.65rem] font-semibold leading-snug tracking-tight">
@@ -38,9 +38,10 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
   const [error, setError] = useState<string | null>(null);
   const posted = useRef<Set<number>>(new Set());
   const tallies = useRef<Record<ReviewResult, number>>({ knew_it: 0, shaky: 0, missed: 0 });
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const card = pack.cards[index];
   const total = pack.cards.length;
+  const longPrompt = card?.card_type === "transform_sentence" || card?.card_type === "fix_error";
 
   useEffect(() => {
     onProgress(index, total);
@@ -80,17 +81,27 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
     [busy, card, index, onFinished, onProgress, total],
   );
 
-  const check = useCallback(() => {
-    if (!card || revealed) return;
-    const result = autoGrade(guess, card.answer);
-    setGrade(result);
-    setRevealed(true);
-  }, [card, guess, revealed]);
+  const check = useCallback(
+    (forced?: ReviewResult) => {
+      if (!card || revealed) return;
+      const result = forced ?? autoGrade(guess, card.answer);
+      setGrade(result);
+      setRevealed(true);
+    },
+    [card, guess, revealed],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "TEXTAREA" || target.dataset.ignoreKeys === "true")) return;
+      if (target && (target.tagName === "TEXTAREA" || target.dataset.ignoreKeys === "true")) {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          if (!revealed) check();
+          else if (grade) void postAndAdvance(grade);
+        }
+        return;
+      }
       if (event.key === "Enter") {
         event.preventDefault();
         if (!revealed) check();
@@ -112,6 +123,12 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
 
   const tone =
     grade === "knew_it" ? "border-moss bg-moss/5" : grade === "shaky" ? "border-amber-500 bg-amber-50" : "border-rose-500 bg-rose-50";
+  const placeholder =
+    card.card_type === "fix_error"
+      ? "Type the corrected sentence"
+      : card.card_type === "transform_sentence"
+        ? "Rewrite the sentence"
+        : "Type your answer";
 
   return (
     <section className="rounded-3xl bg-white p-6 shadow-[0_12px_40px_rgba(18,32,28,0.06)] md:p-10">
@@ -124,16 +141,29 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
       <PromptBody card={card} />
       <p className="mt-3 text-sm text-ink/45">{card.unit_keys.join(" · ")}</p>
 
-      <input
-        ref={inputRef}
-        className="mt-8 w-full rounded-2xl border border-ink/10 bg-sand px-4 py-3.5 text-lg outline-none transition focus:border-moss"
-        value={guess}
-        onChange={(event) => setGuess(event.target.value)}
-        placeholder={card.card_type === "fix_error" ? "Type the corrected sentence" : "Type your answer"}
-        disabled={revealed}
-        autoComplete="off"
-        spellCheck={false}
-      />
+      {longPrompt ? (
+        <textarea
+          ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+          className="mt-8 min-h-[6.5rem] w-full rounded-2xl border border-ink/10 bg-sand px-4 py-3.5 text-lg outline-none transition focus:border-moss"
+          value={guess}
+          onChange={(event) => setGuess(event.target.value)}
+          placeholder={placeholder}
+          disabled={revealed}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      ) : (
+        <input
+          ref={inputRef as React.RefObject<HTMLInputElement>}
+          className="mt-8 w-full rounded-2xl border border-ink/10 bg-sand px-4 py-3.5 text-lg outline-none transition focus:border-moss"
+          value={guess}
+          onChange={(event) => setGuess(event.target.value)}
+          placeholder={placeholder}
+          disabled={revealed}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      )}
 
       {revealed && grade && (
         <div className={`mt-5 rounded-2xl border p-4 ${tone}`}>
@@ -147,18 +177,34 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
         </div>
       )}
 
-      {error && <p className="mt-4 text-sm text-rose-700">{error}</p>}
+      {error && (
+        <p className="mt-4 text-sm text-rose-700">
+          {error}{" "}
+          <button className="underline" onClick={() => grade && void postAndAdvance(grade)} disabled={busy || !grade}>
+            Retry save
+          </button>
+        </p>
+      )}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {!revealed ? (
-          <button
-            className="rounded-2xl bg-moss px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-moss/90 disabled:opacity-50"
-            onClick={check}
-            disabled={busy}
-          >
-            Check
-            <span className="ml-2 text-white/70">Enter</span>
-          </button>
+          <>
+            <button
+              className="rounded-2xl bg-moss px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-moss/90 disabled:opacity-50"
+              onClick={() => check()}
+              disabled={busy}
+            >
+              Check
+              <span className="ml-2 text-white/70">Enter</span>
+            </button>
+            <button
+              className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold"
+              onClick={() => check("missed")}
+              disabled={busy}
+            >
+              I don’t know
+            </button>
+          </>
         ) : (
           <>
             <button
@@ -193,6 +239,10 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
           </>
         )}
       </div>
+      <p className="mt-5 text-xs text-ink/40">
+        Shortcuts: Enter checks or continues · 1 knew it · 2 shaky · 3 missed
+        {longPrompt ? " · ⌘/Ctrl+Enter from the rewrite box" : ""}
+      </p>
     </section>
   );
 }

@@ -4,7 +4,7 @@ import CardPlayer from "./components/CardPlayer";
 import IngestModal from "./components/IngestModal";
 import SpeakingPanel from "./components/SpeakingPanel";
 import UnitInspector from "./components/UnitInspector";
-import { markSessionComplete, readStreak } from "./lib/streak";
+import { markSessionComplete, readSessionCount, readStreak } from "./lib/streak";
 
 type View = "practice" | "memory";
 
@@ -22,6 +22,8 @@ export default function App() {
   const [finished, setFinished] = useState<Record<ReviewResult, number> | null>(null);
   const [playerKey, setPlayerKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busyPack, setBusyPack] = useState(false);
+  const [viewerName, setViewerName] = useState<string | null>(null);
 
   const refreshUnits = useCallback(async () => {
     const listed = await api.units();
@@ -32,6 +34,7 @@ export default function App() {
     try {
       const health = await api.health();
       setOpenai(health.openai_configured);
+      if (health.viewer_name) setViewerName(health.viewer_name);
       let latest = await api.latestPack();
       if (!latest) {
         latest = await api.generatePack();
@@ -40,6 +43,7 @@ export default function App() {
       setProgress({ completed: 0, total: latest.cards.length });
       await refreshUnits();
       setStreak(readStreak().count);
+      setSession(readSessionCount());
       setStatus("Ready");
       setError(null);
     } catch (err) {
@@ -54,17 +58,25 @@ export default function App() {
 
   async function startNewPack() {
     setError(null);
-    const generated = await api.generatePack();
-    setPack(generated);
-    setFinished(null);
-    setProgress({ completed: 0, total: generated.cards.length });
-    setPlayerKey((value) => value + 1);
-    setView("practice");
-    await refreshUnits();
+    setBusyPack(true);
+    try {
+      const generated = await api.generatePack();
+      setPack(generated);
+      setFinished(null);
+      setProgress({ completed: 0, total: generated.cards.length });
+      setPlayerKey((value) => value + 1);
+      setView("practice");
+      await refreshUnits();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate a pack");
+    } finally {
+      setBusyPack(false);
+    }
   }
 
   async function handleIngested(result: IngestResponse) {
-    setNotice(`${result.error_count} errors · ${result.units_touched.length} units · parser ${result.parser}`);
+    const parserLabel = result.parser === "openai" ? "OpenAI parse" : "rule parse";
+    setNotice(`${result.error_count} errors · ${result.units_touched.length} units · ${parserLabel}`);
     setIngestOpen(false);
     await startNewPack();
   }
@@ -73,12 +85,14 @@ export default function App() {
     ? progress.total
     : Math.min(progress.total, progress.completed + (pack ? 1 : 0));
   const pct = progress.total === 0 ? 0 : Math.round((currentStep / progress.total) * 100);
+  const connecting = status === "Connecting";
+  const generator = pack?.generator === "openai" ? "OpenAI cards" : "Template cards";
 
   return (
     <div className="min-h-screen">
       <div className="border-b border-ink/10 bg-white/90">
         <div className="mx-auto max-w-5xl px-4 py-2.5">
-          <div className="h-3 overflow-hidden rounded-full bg-[#ddd6c8]">
+          <div className="h-3 overflow-hidden rounded-full bg-[#ddd6c8]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <div
               className="h-full rounded-full bg-leaf transition-all duration-300"
               style={{ width: `${pct}%` }}
@@ -91,6 +105,7 @@ export default function App() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-moss">Sentence Mining</p>
           <h1 className="font-serif text-3xl font-semibold tracking-tight">Practice the gaps</h1>
+          {viewerName && <p className="mt-1 text-xs text-ink/45">{viewerName}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">Streak {streak}</span>
@@ -101,7 +116,7 @@ export default function App() {
             {currentStep}/{progress.total || 0}
           </span>
           <span className="rounded-full bg-white px-3 py-1.5 text-ink/50 shadow-sm">
-            {openai ? "OpenAI" : "Templates"} · {status}
+            {openai ? "OpenAI on" : "Templates"} · {pack ? generator : status}
           </span>
         </div>
       </header>
@@ -125,10 +140,24 @@ export default function App() {
       </div>
 
       <main className="mx-auto max-w-5xl px-4 py-6">
+        {!openai && status === "Ready" && (
+          <p className="mb-4 rounded-2xl bg-sand px-4 py-3 text-sm text-ink/70">
+            Sample / template cards are in use on this machine. Natural phrasing turns on when
+            <span className="font-semibold"> OPENAI_API_KEY</span> is set for the server — never in the browser.
+          </p>
+        )}
         {error && <p className="mb-4 rounded-2xl bg-rose-100 px-4 py-3 text-sm">{error}</p>}
         {notice && <p className="mb-4 rounded-2xl bg-moss/10 px-4 py-3 text-sm text-moss">{notice}</p>}
 
-        {view === "practice" && (
+        {connecting && (
+          <section className="rounded-3xl bg-white p-8 shadow-[0_12px_40px_rgba(18,32,28,0.06)]">
+            <p className="text-sm uppercase tracking-[0.16em] text-ink/40">Loading</p>
+            <h2 className="mt-2 font-serif text-2xl font-semibold">Preparing your study pack</h2>
+            <p className="mt-3 text-ink/60">Memory state is stored on the server so reviews survive a refresh.</p>
+          </section>
+        )}
+
+        {view === "practice" && !connecting && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]">
             {pack && !finished ? (
               <CardPlayer
@@ -156,8 +185,12 @@ export default function App() {
                   <p className="mt-3 text-ink/70">Generate cards from current memories, or paste a session log.</p>
                 )}
                 <div className="mt-6 flex flex-wrap gap-2">
-                  <button className="rounded-2xl bg-moss px-5 py-3 text-sm font-semibold text-white" onClick={() => void startNewPack()}>
-                    Generate study pack
+                  <button
+                    className="rounded-2xl bg-moss px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    onClick={() => void startNewPack()}
+                    disabled={busyPack}
+                  >
+                    {busyPack ? "Generating…" : "Generate study pack"}
                   </button>
                   <button className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold" onClick={() => setIngestOpen(true)}>
                     Paste session log
@@ -172,7 +205,7 @@ export default function App() {
           </div>
         )}
 
-        {view === "memory" && <UnitInspector units={units} />}
+        {view === "memory" && !connecting && <UnitInspector units={units} />}
       </main>
 
       <IngestModal open={ingestOpen} onClose={() => setIngestOpen(false)} onIngested={(result) => void handleIngested(result)} />

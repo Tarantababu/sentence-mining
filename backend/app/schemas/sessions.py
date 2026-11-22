@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class IngestRequest(BaseModel):
-    raw_log: str = Field(min_length=1)
+    raw_log: str = Field(min_length=1, max_length=20_000)
 
 
 class ParsedErrorOut(BaseModel):

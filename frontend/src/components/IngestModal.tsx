@@ -14,8 +14,6 @@ export default function IngestModal({ open, initialLog, onClose, onIngested }: P
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -31,7 +29,7 @@ export default function IngestModal({ open, initialLog, onClose, onIngested }: P
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-4 md:items-center">
+    <div className={`fixed inset-0 z-40 items-end justify-center bg-ink/40 p-4 md:items-center ${open ? "flex" : "hidden"}`}>
       <form
         onSubmit={submit}
         className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-3xl bg-white p-6 shadow-xl"
@@ -49,6 +47,7 @@ export default function IngestModal({ open, initialLog, onClose, onIngested }: P
         </div>
         <textarea
           data-ignore-keys="true"
+          maxLength={20000}
           className="mt-4 min-h-[22rem] flex-1 rounded-2xl border border-ink/10 bg-sand p-4 font-mono text-sm leading-relaxed outline-none focus:border-moss"
           value={log}
           onChange={(event) => setLog(event.target.value)}

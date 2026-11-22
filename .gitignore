@@ -14,6 +14,10 @@ htmlcov/
 node_modules/
 dist/
 frontend/dist/
+web/.next/
+web/node_modules/
+web/.env
+.next/
 backend/sentence_mining.db
 .DS_Store
 .idea/

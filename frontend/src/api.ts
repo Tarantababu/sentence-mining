@@ -84,7 +84,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string; openai_configured: boolean }>("/api/health"),
+  health: () =>
+    request<{ status: string; openai_configured: boolean; viewer_name?: string | null }>("/api/health"),
   ingest: (raw_log: string) =>
     request<IngestResponse>("/api/sessions/ingest", {
       method: "POST",

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import deque
+from time import monotonic
 from typing import Any, TypeVar
 
 import httpx
@@ -12,10 +14,31 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
+_OPENAI_WINDOW_SECONDS = 60.0
+_OPENAI_MAX_CALLS = 30
+_recent_calls: deque[float] = deque()
+
+
+def reset_rate_limit() -> None:
+    _recent_calls.clear()
+
+
+def _allow_openai_call() -> bool:
+    now = monotonic()
+    while _recent_calls and now - _recent_calls[0] > _OPENAI_WINDOW_SECONDS:
+        _recent_calls.popleft()
+    if len(_recent_calls) >= _OPENAI_MAX_CALLS:
+        logger.warning("OpenAI rate limit reached; using fallback")
+        return False
+    _recent_calls.append(now)
+    return True
+
 
 def complete_json(system: str, user: str, model_type: type[T]) -> T | None:
     settings = get_settings()
     if not settings.openai_configured:
+        return None
+    if not _allow_openai_call():
         return None
     timeout = settings.openai_timeout_seconds
     payload: dict[str, Any] = {

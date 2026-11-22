@@ -65,6 +65,20 @@ See `.env.example`. Important keys:
 - `GET /api/units`
 - `GET /api/health`
 
+## Hosted web app
+
+The Cursor-hosted player lives in `web/`: Next.js UI plus the same `/api/*` contract and memory math, reading `OPENAI_API_KEY` from the server environment (never `VITE_` / the browser). Locally it uses in-memory PGlite when `DATABASE_URL` is unset.
+
+```bash
+cd web
+npm install
+env -u DATABASE_URL npm run dev
+```
+
+UI: http://127.0.0.1:3000
+
+Publish as a **private** app so OpenAI spend is not a public endpoint. Bind `OPENAI_API_KEY` in Cursor secrets; the app falls back to deterministic templates when the key is missing.
+
 ## Production
 
 ```bash
