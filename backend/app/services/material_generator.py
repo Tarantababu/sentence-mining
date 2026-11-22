@@ -91,7 +91,7 @@ def fallback_pack(
         prompts.append(
             DraftPrompt(
                 prompt=(
-                    f"Next session: tell a 20-second story that naturally uses "
+                    f"Tell a 20-second story that naturally uses "
                     f"“{unit.label}”. Keep everything else easy."
                 ),
                 unit_keys=[unit.key],
@@ -103,7 +103,7 @@ def fallback_pack(
         prompts.append(
             DraftPrompt(
                 prompt=(
-                    f"Next session: compare two recent situations using "
+                    f"Compare two recent situations using "
                     f"“{pair[0].label}” and “{pair[1].label}”."
                 ),
                 unit_keys=[unit.key for unit in pair],

@@ -73,14 +73,14 @@ export function fallbackPack(
   });
 
   const prompts: DraftPrompt[] = ranked.slice(0, budgetPrompts).map((unit) => ({
-    prompt: `Next session: tell a 20-second story that naturally uses “${unit.label}”. Keep everything else easy.`,
+    prompt: `Tell a 20-second story that naturally uses “${unit.label}”. Keep everything else easy.`,
     unit_keys: [unit.key],
     why: `This phrase needs a spoken pass in a real conversation.`,
   }));
   if (budgetPrompts > prompts.length && ranked.length >= 2) {
     const pair = ranked.slice(0, 2);
     prompts.push({
-      prompt: `Next session: compare two recent situations using “${pair[0].label}” and “${pair[1].label}”.`,
+      prompt: `Compare two recent situations using “${pair[0].label}” and “${pair[1].label}”.`,
       unit_keys: pair.map((unit) => unit.key),
       why: pair.map((unit) => unit.label).join(" · "),
     });

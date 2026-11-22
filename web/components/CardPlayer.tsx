@@ -11,29 +11,45 @@ type Props = {
   onFinished: (results: Record<ReviewResult, number>) => void;
 };
 
-function PromptBody({ card }: { card: StudyCard }) {
+function PromptBody({ card, live }: { card: StudyCard; live: boolean }) {
   const parts = card.prompt.split(/_{3,}|…{3,}|_____+/);
   if (card.card_type === "fill_in_blank" && parts.length > 1) {
     return (
-      <p className="text-[1.85rem] font-semibold leading-snug tracking-tight">
+      <p className="font-serif text-[2rem] font-semibold leading-[1.25] tracking-tight md:text-[2.35rem]">
         {parts.map((part, index) => (
           <span key={`${part}-${index}`}>
             {part}
             {index < parts.length - 1 && (
-              <span className="mx-1 inline-block min-w-[5rem] border-b-[3px] border-leaf align-baseline" />
+              <span
+                className={`mx-1 inline-block min-w-[6rem] border-b-[3px] align-baseline ${
+                  live ? "blank-pulse border-leaf" : "border-moss"
+                }`}
+              />
             )}
           </span>
         ))}
       </p>
     );
   }
-  return <p className="text-[1.85rem] font-semibold leading-snug tracking-tight">{card.prompt}</p>;
+  return (
+    <p className="font-serif text-[2rem] font-semibold leading-[1.25] tracking-tight md:text-[2.35rem]">
+      {card.prompt.replace(/^(Complete:|Fix:|Rewrite[^:]*:)\s*/i, "")}
+    </p>
+  );
 }
 
 const GRADE_KEYS: Record<string, ReviewResult> = { "1": "knew_it", "2": "shaky", "3": "missed" };
 
+const TASK: Record<string, string> = {
+  fill_in_blank: "Complete the sentence",
+  fix_error: "Make this natural",
+  transform_sentence: "Rewrite it cleanly",
+};
+
 export default function CardPlayer({ pack, startIndex = 0, onProgress, onFinished }: Props) {
-  const [index, setIndex] = useState(() => Math.min(Math.max(0, startIndex), Math.max(pack.cards.length - 1, 0)));
+  const [index, setIndex] = useState(() =>
+    Math.min(Math.max(0, startIndex), Math.max(pack.cards.length - 1, 0)),
+  );
   const [guess, setGuess] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [grade, setGrade] = useState<ReviewResult | null>(null);
@@ -128,127 +144,151 @@ export default function CardPlayer({ pack, startIndex = 0, onProgress, onFinishe
 
   const tone =
     grade === "knew_it"
-      ? "border-moss bg-moss/10"
+      ? "teach-ok"
       : grade === "shaky"
-        ? "border-amber-500 bg-amber-50"
-        : "border-rose-500 bg-rose-50";
+        ? "teach-close"
+        : "teach-miss";
   const placeholder =
     card.card_type === "fix_error"
-      ? "Type the corrected sentence"
+      ? "Type the natural sentence"
       : card.card_type === "transform_sentence"
-        ? "Rewrite the sentence"
+        ? "Rewrite in natural English"
         : "Type the missing words";
 
   return (
-    <section
-      key={card.id}
-      className="card-in rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)] md:p-10"
-    >
-      <div className="mb-7 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
-        <span>
-          {card.queue === "stretch" ? "Stretch" : "Due"} · {CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}
-        </span>
-        <span>
-          {index + 1} / {total}
-        </span>
+    <div className="mx-auto w-full max-w-2xl">
+      <div className="mb-6 flex items-center gap-1.5" aria-hidden>
+        {pack.cards.map((item, step) => (
+          <span
+            key={item.id}
+            className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${
+              step < index ? "bg-moss" : step === index ? "bg-leaf" : "bg-ink/10"
+            }`}
+          />
+        ))}
       </div>
-      <PromptBody card={card} />
 
-      {longPrompt ? (
-        <textarea
-          ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-          className="mt-8 min-h-[6.5rem] w-full rounded-2xl border border-ink/10 bg-sand px-4 py-3.5 text-lg outline-none transition focus:border-moss"
-          value={guess}
-          onChange={(event) => setGuess(event.target.value)}
-          placeholder={placeholder}
-          disabled={revealed}
-          autoComplete="off"
-          spellCheck={false}
-        />
-      ) : (
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          className="mt-8 w-full rounded-2xl border border-ink/10 bg-sand px-4 py-3.5 text-lg outline-none transition focus:border-moss"
-          value={guess}
-          onChange={(event) => setGuess(event.target.value)}
-          placeholder={placeholder}
-          disabled={revealed}
-          autoComplete="off"
-          spellCheck={false}
-        />
-      )}
-
-      {revealed && grade && (
-        <div className={`mt-5 rounded-2xl border p-4 ${tone}`}>
-          <p className="text-sm font-semibold uppercase tracking-wide">{GRADE_COPY[grade].label}</p>
-          <p className="mt-1 text-lg font-medium">{card.answer}</p>
-          <p className="mt-3 text-[0.95rem] leading-relaxed text-ink/75">
-            <span className="font-semibold text-ink">Why. </span>
-            {card.why}
+      <section
+        key={card.id}
+        className={`card-in relative overflow-hidden rounded-[2rem] bg-white p-7 shadow-[0_24px_60px_rgba(18,32,28,0.10)] md:p-11 ${
+          revealed && grade === "knew_it" ? "ring-2 ring-leaf/70" : ""
+        }`}
+      >
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-moss">
+            {TASK[card.card_type] ?? CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}
+          </p>
+          <p className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-ink/55">
+            {index + 1} of {total}
           </p>
         </div>
-      )}
 
-      {error && (
-        <p className="mt-4 text-sm text-rose-700">
-          {error}{" "}
-          <button className="underline" onClick={() => grade && void postAndAdvance(grade)} disabled={busy || !grade}>
-            Retry save
-          </button>
-        </p>
-      )}
+        <PromptBody card={card} live={!revealed} />
 
-      <div className="mt-7 flex flex-wrap gap-2">
-        {!revealed ? (
-          <>
-            <button
-              className="rounded-2xl bg-leaf px-7 py-3.5 text-sm font-bold text-[#123016] shadow-sm transition hover:brightness-95 disabled:opacity-50"
-              onClick={() => check()}
-              disabled={busy}
-            >
-              Check
-            </button>
-            <button
-              className="rounded-2xl bg-sand px-5 py-3.5 text-sm font-semibold"
-              onClick={() => check("missed")}
-              disabled={busy}
-            >
-              I don’t know
-            </button>
-          </>
+        {longPrompt ? (
+          <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+            className="mt-9 min-h-[7rem] w-full rounded-2xl border border-ink/10 bg-sand px-4 py-4 text-lg outline-none transition focus:border-leaf focus:bg-white focus:shadow-[0_0_0_4px_rgba(88,204,2,0.18)]"
+            value={guess}
+            onChange={(event) => setGuess(event.target.value)}
+            placeholder={placeholder}
+            disabled={revealed}
+            autoComplete="off"
+            spellCheck={false}
+          />
         ) : (
-          <>
-            <button
-              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "knew_it" ? "bg-moss text-white" : "bg-sand"}`}
-              onClick={() => void postAndAdvance("knew_it")}
-              disabled={busy}
-            >
-              Knew it
-            </button>
-            <button
-              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "shaky" ? "bg-amber-500 text-white" : "bg-sand"}`}
-              onClick={() => void postAndAdvance("shaky")}
-              disabled={busy}
-            >
-              Shaky
-            </button>
-            <button
-              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "missed" ? "bg-rose-600 text-white" : "bg-sand"}`}
-              onClick={() => void postAndAdvance("missed")}
-              disabled={busy}
-            >
-              Missed
-            </button>
-            <button
-              className="rounded-2xl bg-ink px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={() => grade && void postAndAdvance(grade)}
-              disabled={busy || !grade}
-            >
-              Continue
-            </button>
-          </>
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            className="mt-9 w-full rounded-2xl border border-ink/10 bg-sand px-4 py-4 text-lg outline-none transition focus:border-leaf focus:bg-white focus:shadow-[0_0_0_4px_rgba(88,204,2,0.18)]"
+            value={guess}
+            onChange={(event) => setGuess(event.target.value)}
+            placeholder={placeholder}
+            disabled={revealed}
+            autoComplete="off"
+            spellCheck={false}
+          />
         )}
-      </div>
-    </section>
+
+        {revealed && grade && (
+          <div className={`teach-in mt-6 rounded-2xl p-5 ${tone}`}>
+            <p className="text-sm font-bold tracking-wide">{GRADE_COPY[grade].label}</p>
+            <p className="mt-2 font-serif text-2xl font-semibold leading-snug">{card.answer}</p>
+            <p className="mt-3 text-[1rem] leading-relaxed text-ink/80">{card.why}</p>
+            <p className="say-it mt-4 text-sm font-semibold text-ink">
+              Say it once: <span className="font-serif font-semibold">{card.answer}</span>
+            </p>
+            <p className="mt-1 text-xs text-ink/45">{GRADE_COPY[grade].hint}</p>
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-4 text-sm text-rose-700">
+            {error}{" "}
+            <button className="underline" onClick={() => grade && void postAndAdvance(grade)} disabled={busy || !grade}>
+              Retry save
+            </button>
+          </p>
+        )}
+
+        <div className="mt-8 flex flex-wrap items-center gap-2">
+          {!revealed ? (
+            <>
+              <button
+                className="rounded-2xl bg-leaf px-8 py-3.5 text-sm font-bold text-[#123016] shadow-[0_8px_20px_rgba(88,204,2,0.35)] transition hover:brightness-95 disabled:opacity-50"
+                onClick={() => check()}
+                disabled={busy}
+              >
+                Check
+              </button>
+              <button
+                className="rounded-2xl bg-sand px-5 py-3.5 text-sm font-semibold"
+                onClick={() => check("missed")}
+                disabled={busy}
+              >
+                Show me
+              </button>
+              <span className="ml-1 text-xs text-ink/40">Enter</span>
+            </>
+          ) : (
+            <>
+              <button
+                className={`rounded-2xl px-4 py-3.5 text-sm font-semibold transition ${
+                  grade === "knew_it" ? "bg-moss text-white shadow-md" : "bg-sand hover:bg-moss/15"
+                }`}
+                onClick={() => void postAndAdvance("knew_it")}
+                disabled={busy}
+              >
+                Knew it
+              </button>
+              <button
+                className={`rounded-2xl px-4 py-3.5 text-sm font-semibold transition ${
+                  grade === "shaky" ? "bg-amber-500 text-white shadow-md" : "bg-sand hover:bg-amber-50"
+                }`}
+                onClick={() => void postAndAdvance("shaky")}
+                disabled={busy}
+              >
+                Almost
+              </button>
+              <button
+                className={`rounded-2xl px-4 py-3.5 text-sm font-semibold transition ${
+                  grade === "missed" ? "bg-rose-600 text-white shadow-md" : "bg-sand hover:bg-rose-50"
+                }`}
+                onClick={() => void postAndAdvance("missed")}
+                disabled={busy}
+              >
+                Not yet
+              </button>
+              <button
+                className="ml-auto rounded-2xl bg-ink px-6 py-3.5 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={() => grade && void postAndAdvance(grade)}
+                disabled={busy || !grade}
+              >
+                Continue
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
