@@ -32,8 +32,5 @@ export async function POST(request: Request) {
     vocab_count: parsed.vocab.length,
     tracking_count: parsed.tracking.length,
     focus_next_lesson: parsed.focus_lines.join("\n") || null,
-    units_touched: [...new Set(parsed.errors.map((item) => item.unit_key))].sort(),
-    errors: parsed.errors,
-    parser: parsed.parser,
   });
 }

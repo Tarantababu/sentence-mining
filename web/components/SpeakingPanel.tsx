@@ -4,9 +4,9 @@ import { SpeakingPrompt } from "../lib/client/api";
 
 export default function SpeakingPanel({ prompts }: { prompts: SpeakingPrompt[] }) {
   return (
-    <aside className="rounded-3xl bg-white p-6 shadow-[0_12px_40px_rgba(18,32,28,0.06)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">Next session</p>
-      <h2 className="mt-1 text-lg font-semibold">Speaking prompts</h2>
+    <aside className="rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">Next lesson</p>
+      <h2 className="mt-1 font-serif text-xl font-semibold">Speak these</h2>
       {prompts.length === 0 ? (
         <p className="mt-4 text-sm text-ink/50">Prompts appear with a study pack.</p>
       ) : (
@@ -17,7 +17,7 @@ export default function SpeakingPanel({ prompts }: { prompts: SpeakingPrompt[] }
                 <span className="mr-2 font-semibold text-moss">{index + 1}.</span>
                 {item.prompt}
               </p>
-              <p className="mt-1 text-xs text-ink/40">{item.unit_keys.join(" · ")}</p>
+              {item.why && <p className="mt-1 text-xs text-ink/45">{item.why}</p>}
             </li>
           ))}
         </ol>

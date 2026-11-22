@@ -31,14 +31,14 @@ function templateFor(unit: RankedUnit, cardType: string): [string, string, strin
   }
   const label = unit.label;
   if (cardType === "fill_in_blank") {
-    return [`Complete the natural phrase for: ${label}.`, label, `Target unit: ${label}.`];
+    return [`I need to _____ before dinner.`, label, `Use the natural phrase: ${label}.`];
   }
   if (cardType === "fix_error") {
-    return [`Fix the sentence so it uses ${label} correctly.`, label, `Focus on ${label}.`];
+    return [`Fix: I did ${label} wrong in that sentence.`, `I used ${label} correctly.`, `Keep ${label} as a set phrase.`];
   }
   return [
-    `Rewrite a short everyday sentence that uses ${label}.`,
-    label,
+    `Rewrite: I will mention ${label} in a short everyday sentence.`,
+    `I'll use ${label} in a short everyday sentence.`,
     `Keep the surrounding English simple; target ${label}.`,
   ];
 }
@@ -72,7 +72,7 @@ export function fallbackPack(
   const prompts: DraftPrompt[] = ranked.slice(0, budgetPrompts).map((unit) => ({
     prompt: `Next session: tell a 20-second story that naturally uses “${unit.label}”. Keep everything else easy.`,
     unit_keys: [unit.key],
-    why: `Speak this unit because urgency is high (${unit.urgency.toFixed(2)}).`,
+    why: `This phrase needs a spoken pass in a real conversation.`,
   }));
   if (budgetPrompts > prompts.length && ranked.length >= 2) {
     const pair = ranked.slice(0, 2);
@@ -147,15 +147,18 @@ export async function generatePack(
     budget_cards: budgetCards,
     budget_prompts: budgetPrompts,
     constraints: [
-      "Each card targets 1-2 of the provided unit keys only.",
-      "Surrounding English must be natural, adult, and i+1 (easy except the target).",
+      "Each card is a full natural English sentence: fill-in-the-blank, a sentence to fix, or a sentence to rewrite.",
+      "prompt, answer, and why must be human language only — never unit slugs such as attend_no_prep.",
+      "Keep unit_keys in the JSON field only, never inside the sentence.",
+      "Surrounding English must be adult i+1 (easy except the target).",
       "Preserve card_type and the intended answer meaning.",
-      "Return JSON: cards[], speaking_prompts[].",
     ],
   };
   const system =
-    "You write short i+1 English practice cards for an adult learner. " +
-    "Return only JSON matching the schema {cards:[{card_type,prompt,answer,why,unit_keys}]," +
+    "You write short i+1 English sentence cards for an adult learner. " +
+    "Each prompt is a natural sentence, never a debug label. " +
+    "Never put unit slugs in prompt, answer, or why. " +
+    "Return only JSON matching {cards:[{card_type,prompt,answer,why,unit_keys}]," +
     "speaking_prompts:[{prompt,unit_keys,why}]}.";
   const llm = await completeJson(ownerId, system, JSON.stringify(user), generatedPackSchema);
   if (llm == null) return skeleton;

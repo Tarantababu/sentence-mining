@@ -46,3 +46,15 @@ FOCUS FOR NEXT LESSON
 - verb-preposition collocations
 - rather not vs prefer
 `;
+
+export const SAMPLE_LOG_TWO = `SESSION 2026-11-22 — follow-up notes
+
+You said: I attended to class again
+Correct: I attended class again
+Why: attend + event, no preposition
+RECURRING
+
+You said: I wouldn't prefer to stay late
+Correct: I'd rather not stay late
+Why: I'd rather not + verb
+`;

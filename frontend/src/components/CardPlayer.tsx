@@ -139,7 +139,6 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
         </span>
       </div>
       <PromptBody card={card} />
-      <p className="mt-3 text-sm text-ink/45">{card.unit_keys.join(" · ")}</p>
 
       {longPrompt ? (
         <textarea

@@ -1,6 +1,7 @@
 import { requireViewer } from "../../../lib/auth";
 import { json } from "../../../lib/http";
 import { openaiConfigured } from "../../../lib/openai";
+import { hasPersonalOpenAiKey } from "../../../lib/secrets";
 import { seedIfNeeded } from "../../../lib/store";
 
 export const runtime = "nodejs";
@@ -12,7 +13,8 @@ export async function GET(request: Request) {
   await seedIfNeeded(viewer.ownerId);
   return json({
     status: "ok",
-    openai_configured: openaiConfigured(),
+    openai_configured: await openaiConfigured(viewer.ownerId),
+    has_personal_key: await hasPersonalOpenAiKey(viewer.ownerId),
     viewer_name: viewer.name || null,
   });
 }

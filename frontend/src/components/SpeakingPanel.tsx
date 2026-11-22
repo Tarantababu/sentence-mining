@@ -15,7 +15,7 @@ export default function SpeakingPanel({ prompts }: { prompts: SpeakingPrompt[] }
                 <span className="mr-2 font-semibold text-moss">{index + 1}.</span>
                 {item.prompt}
               </p>
-              <p className="mt-1 text-xs text-ink/40">{item.unit_keys.join(" · ")}</p>
+              {item.why && <p className="mt-1 text-xs text-ink/40">{item.why}</p>}
             </li>
           ))}
         </ol>

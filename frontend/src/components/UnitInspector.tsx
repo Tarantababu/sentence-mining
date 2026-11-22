@@ -23,7 +23,6 @@ export default function UnitInspector({ units }: { units: UnitRow[] }) {
           <li key={unit.key} className="grid gap-3 border-t border-ink/5 px-6 py-4 md:grid-cols-[1.4fr_1fr_auto]">
             <div>
               <p className="font-medium">{unit.label}</p>
-              <p className="text-xs text-ink/40">{unit.key}</p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {unit.is_recurring && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px]">recurring</span>}
                 {unit.is_focus && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px]">focus</span>}

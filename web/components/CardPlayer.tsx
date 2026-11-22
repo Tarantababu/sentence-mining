@@ -14,19 +14,19 @@ function PromptBody({ card }: { card: StudyCard }) {
   const parts = card.prompt.split(/_{3,}|…{3,}|_____+/);
   if (card.card_type === "fill_in_blank" && parts.length > 1) {
     return (
-      <p className="text-[1.65rem] font-semibold leading-snug tracking-tight">
+      <p className="text-[1.85rem] font-semibold leading-snug tracking-tight">
         {parts.map((part, index) => (
           <span key={`${part}-${index}`}>
             {part}
             {index < parts.length - 1 && (
-              <span className="mx-1 inline-block min-w-[4.5rem] border-b-2 border-moss/70 align-baseline" />
+              <span className="mx-1 inline-block min-w-[5rem] border-b-[3px] border-leaf align-baseline" />
             )}
           </span>
         ))}
       </p>
     );
   }
-  return <p className="text-[1.65rem] font-semibold leading-snug tracking-tight">{card.prompt}</p>;
+  return <p className="text-[1.85rem] font-semibold leading-snug tracking-tight">{card.prompt}</p>;
 }
 
 const GRADE_KEYS: Record<string, ReviewResult> = { "1": "knew_it", "2": "shaky", "3": "missed" };
@@ -124,24 +124,30 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
   if (!card) return null;
 
   const tone =
-    grade === "knew_it" ? "border-moss bg-moss/5" : grade === "shaky" ? "border-amber-500 bg-amber-50" : "border-rose-500 bg-rose-50";
+    grade === "knew_it"
+      ? "border-moss bg-moss/10"
+      : grade === "shaky"
+        ? "border-amber-500 bg-amber-50"
+        : "border-rose-500 bg-rose-50";
   const placeholder =
     card.card_type === "fix_error"
       ? "Type the corrected sentence"
       : card.card_type === "transform_sentence"
         ? "Rewrite the sentence"
-        : "Type your answer";
+        : "Type the missing words";
 
   return (
-    <section className="rounded-3xl bg-white p-6 shadow-[0_12px_40px_rgba(18,32,28,0.06)] md:p-10">
-      <div className="mb-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">
-        <span>{CARD_TYPE_LABEL[card.card_type] ?? card.card_type}</span>
+    <section
+      key={card.id}
+      className="card-in rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)] md:p-10"
+    >
+      <div className="mb-7 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+        <span>{CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}</span>
         <span>
           {index + 1} / {total}
         </span>
       </div>
       <PromptBody card={card} />
-      <p className="mt-3 text-sm text-ink/45">{card.unit_keys.join(" · ")}</p>
 
       {longPrompt ? (
         <textarea
@@ -175,7 +181,6 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
             <span className="font-semibold text-ink">Why. </span>
             {card.why}
           </p>
-          <p className="mt-2 text-xs text-ink/45">{GRADE_COPY[grade].hint}. Press 1 / 2 / 3 to override, Enter to continue.</p>
         </div>
       )}
 
@@ -188,19 +193,18 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
         </p>
       )}
 
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-7 flex flex-wrap gap-2">
         {!revealed ? (
           <>
             <button
-              className="rounded-2xl bg-moss px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-moss/90 disabled:opacity-50"
+              className="rounded-2xl bg-leaf px-7 py-3.5 text-sm font-bold text-[#123016] shadow-sm transition hover:brightness-95 disabled:opacity-50"
               onClick={() => check()}
               disabled={busy}
             >
               Check
-              <span className="ml-2 text-white/70">Enter</span>
             </button>
             <button
-              className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold"
+              className="rounded-2xl bg-sand px-5 py-3.5 text-sm font-semibold"
               onClick={() => check("missed")}
               disabled={busy}
             >
@@ -210,41 +214,36 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
         ) : (
           <>
             <button
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold ${grade === "knew_it" ? "bg-moss text-white" : "bg-sand"}`}
+              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "knew_it" ? "bg-moss text-white" : "bg-sand"}`}
               onClick={() => void postAndAdvance("knew_it")}
               disabled={busy}
             >
-              1 Knew it
+              Knew it
             </button>
             <button
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold ${grade === "shaky" ? "bg-amber-500 text-white" : "bg-sand"}`}
+              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "shaky" ? "bg-amber-500 text-white" : "bg-sand"}`}
               onClick={() => void postAndAdvance("shaky")}
               disabled={busy}
             >
-              2 Shaky
+              Shaky
             </button>
             <button
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold ${grade === "missed" ? "bg-rose-600 text-white" : "bg-sand"}`}
+              className={`rounded-2xl px-4 py-3.5 text-sm font-semibold ${grade === "missed" ? "bg-rose-600 text-white" : "bg-sand"}`}
               onClick={() => void postAndAdvance("missed")}
               disabled={busy}
             >
-              3 Missed
+              Missed
             </button>
             <button
-              className="rounded-2xl bg-ink px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-2xl bg-ink px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50"
               onClick={() => grade && void postAndAdvance(grade)}
               disabled={busy || !grade}
             >
               Continue
-              <span className="ml-2 text-white/50">Enter</span>
             </button>
           </>
         )}
       </div>
-      <p className="mt-5 text-xs text-ink/40">
-        Shortcuts: Enter checks or continues · 1 knew it · 2 shaky · 3 missed
-        {longPrompt ? " · ⌘/Ctrl+Enter from the rewrite box" : ""}
-      </p>
     </section>
   );
 }

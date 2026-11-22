@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { openaiCallsInWindow, recordOpenAiCall } from "./rate-limit";
+import { resolveOpenAiKey } from "./secrets";
 
 const OPENAI_MAX_PER_HOUR = 20;
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -54,8 +55,12 @@ export const parsedLogSchema = z.object({
   focus: z.array(z.string()).optional().default([]),
 });
 
-export function openaiConfigured(): boolean {
+export function envOpenAiConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+export async function openaiConfigured(ownerId: string): Promise<boolean> {
+  return Boolean(await resolveOpenAiKey(ownerId));
 }
 
 export function openaiModel(): string {
@@ -74,7 +79,7 @@ export async function completeJson<S extends z.ZodTypeAny>(
   user: string,
   schema: S,
 ): Promise<z.output<S> | null> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim() ?? "";
+  const apiKey = await resolveOpenAiKey(ownerId);
   if (!apiKey) return null;
   if ((await openaiCallsInWindow(ownerId, 3600)) >= OPENAI_MAX_PER_HOUR) return null;
   await recordOpenAiCall(ownerId);

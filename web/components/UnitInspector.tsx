@@ -12,20 +12,20 @@ function Bar({ value, max, className }: { value: number; max: number; className:
 }
 
 export default function UnitInspector({ units }: { units: UnitRow[] }) {
-  const ranked = [...units].sort((a, b) => b.urgency - a.urgency);
+  const ranked = [...units].filter((unit) => unit.error_count + unit.success_count > 0 || unit.is_focus || unit.is_tracking);
+  ranked.sort((a, b) => b.urgency - a.urgency);
   return (
-    <section className="overflow-hidden rounded-3xl bg-white shadow-[0_12px_40px_rgba(18,32,28,0.06)]">
+    <section className="overflow-hidden rounded-[2rem] bg-white shadow-[0_18px_50px_rgba(18,32,28,0.08)]">
       <div className="border-b border-ink/5 px-6 py-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">Memory</p>
-        <h2 className="mt-1 text-lg font-semibold">Unit inspector</h2>
-        <p className="mt-1 text-sm text-ink/50">Stability, recall, and urgency for each canonical unit.</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">Memory</p>
+        <h2 className="mt-1 font-serif text-xl font-semibold">What is fading</h2>
+        <p className="mt-1 text-sm text-ink/50">Stability and recall from every log you have pasted.</p>
       </div>
       <ul>
         {ranked.map((unit) => (
-          <li key={unit.key} className="grid gap-3 border-t border-ink/5 px-6 py-4 md:grid-cols-[1.4fr_1fr_auto]">
+          <li key={unit.label} className="grid gap-3 border-t border-ink/5 px-6 py-4 md:grid-cols-[1.4fr_1fr_auto]">
             <div>
               <p className="font-medium">{unit.label}</p>
-              <p className="text-xs text-ink/40">{unit.key}</p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {unit.is_recurring && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px]">recurring</span>}
                 {unit.is_focus && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px]">focus</span>}
@@ -34,18 +34,18 @@ export default function UnitInspector({ units }: { units: UnitRow[] }) {
             </div>
             <div className="grid grid-cols-3 gap-3 text-xs">
               <div>
-                <p className="text-ink/40">S_k</p>
-                <p className="font-semibold">{unit.stability_days.toFixed(2)}</p>
+                <p className="text-ink/40">Stability</p>
+                <p className="font-semibold">{unit.stability_days.toFixed(1)}d</p>
                 <Bar value={unit.stability_days} max={12} className="bg-moss" />
               </div>
               <div>
-                <p className="text-ink/40">p_k</p>
-                <p className="font-semibold">{unit.p_k.toFixed(2)}</p>
+                <p className="text-ink/40">Recall</p>
+                <p className="font-semibold">{Math.round(unit.p_k * 100)}%</p>
                 <Bar value={unit.p_k} max={1} className="bg-ink/50" />
               </div>
               <div>
-                <p className="text-ink/40">Urgency</p>
-                <p className="font-semibold">{unit.urgency.toFixed(2)}</p>
+                <p className="text-ink/40">Need</p>
+                <p className="font-semibold">{unit.urgency.toFixed(1)}</p>
                 <Bar value={unit.urgency} max={2.5} className="bg-amber-500" />
               </div>
             </div>
@@ -55,7 +55,9 @@ export default function UnitInspector({ units }: { units: UnitRow[] }) {
             </div>
           </li>
         ))}
-        {ranked.length === 0 && <p className="px-6 py-8 text-sm text-ink/50">No units yet. Ingest a session log.</p>}
+        {ranked.length === 0 && (
+          <p className="px-6 py-8 text-sm text-ink/50">Paste a session log to start a memory trail.</p>
+        )}
       </ul>
     </section>
   );

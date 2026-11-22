@@ -6,14 +6,11 @@ export type StudyCard = {
   prompt: string;
   answer: string;
   why: string;
-  unit_keys: string[];
-  skill_tags: string[];
   order_index: number;
 };
 
 export type SpeakingPrompt = {
   prompt: string;
-  unit_keys: string[];
   why: string;
 };
 
@@ -48,8 +45,15 @@ export type IngestResponse = {
   vocab_count: number;
   tracking_count: number;
   focus_next_lesson: string | null;
-  units_touched: string[];
-  parser: string;
+};
+
+export type SessionLog = {
+  id: number;
+  ingested_at: string;
+  source: string;
+  error_count: number;
+  preview: string;
+  raw_log?: string;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -73,14 +77,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () =>
-    request<{ status: string; openai_configured: boolean; viewer_name?: string | null }>(
-      "/api/health",
-    ),
+    request<{
+      status: string;
+      openai_configured: boolean;
+      has_personal_key?: boolean;
+      viewer_name?: string | null;
+    }>("/api/health"),
   ingest: (raw_log: string) =>
     request<IngestResponse>("/api/sessions/ingest", {
       method: "POST",
       body: JSON.stringify({ raw_log }),
     }),
+  sessions: () => request<{ sessions: SessionLog[] }>("/api/sessions"),
+  session: (id: number) => request<SessionLog>(`/api/sessions/${id}`),
+  settings: () =>
+    request<{ openai_configured: boolean; has_personal_key: boolean }>("/api/settings"),
+  saveOpenAiKey: (api_key: string) =>
+    request<{ saved: boolean; has_personal_key: boolean; openai_configured: boolean }>(
+      "/api/settings/openai-key",
+      { method: "PUT", body: JSON.stringify({ api_key }) },
+    ),
   latestPack: async () => {
     const response = await fetch("/api/study-pack/latest", {
       credentials: "same-origin",
@@ -96,15 +112,7 @@ export const api = {
       body: JSON.stringify({ budget_cards: 8, budget_prompts: 3 }),
     }),
   submitReview: (card_id: number, result: ReviewResult) =>
-    request<{
-      review_id: number;
-      card_id: number;
-      result: ReviewResult;
-      p_before: Record<string, number>;
-      s_before: Record<string, number>;
-      s_after: Record<string, number>;
-      units: string[];
-    }>("/api/reviews/submit", {
+    request<{ review_id: number; card_id: number; result: ReviewResult }>("/api/reviews/submit", {
       method: "POST",
       body: JSON.stringify({ card_id, result }),
     }),

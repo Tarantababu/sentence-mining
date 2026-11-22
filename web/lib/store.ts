@@ -14,6 +14,8 @@ import {
   urgency,
   utcnow,
 } from "./memory";
+import { matchFocusKeys } from "./catalog";
+import { humanizeText } from "./humanize";
 import { generatePack } from "./material";
 import { completeJson, parsedLogSchema } from "./openai";
 import {
@@ -179,16 +181,12 @@ export async function ingestSession(
         vocab: parsed.vocab,
         tracking: parsed.tracking,
         focus: parsed.focus_lines,
+        focus_unit_keys: parsed.focus_unit_keys,
       }),
       now,
     ],
   );
   const sessionId = inserted[0].id;
-
-  await sql(
-    "update unit_memories set is_focus = false, is_tracking = false where owner_id = $1",
-    [ownerId],
-  );
 
   const touched = new Set<string>();
 
@@ -248,12 +246,74 @@ export async function ingestSession(
     for (const key of item.unit_keys) trackingKeys.add(key);
   }
 
-  const focusKeys = new Set(parsed.focus_unit_keys);
-  for (const key of new Set([...trackingKeys, ...focusKeys])) {
+  for (const key of trackingKeys) {
     const unit = await getOrCreateUnit(key);
     touched.add(unit.key);
-    const row = await memoryRow(ownerId, unit.id);
-    if (!row) {
+  }
+
+  await rebuildFlagsFromHistory(ownerId);
+  return { sessionId, parsed };
+}
+
+async function rebuildFlagsFromHistory(ownerId: string): Promise<void> {
+  await sql(
+    "update unit_memories set is_focus = false, is_tracking = false where owner_id = $1",
+    [ownerId],
+  );
+  const errorStats = await sql<{ unit_id: number; n: number; flagged: boolean }>(
+    `select e.unit_id, count(*)::int as n, bool_or(e.is_recurring) as flagged
+     from session_errors e
+     join sessions s on s.id = e.session_id
+     where s.owner_id = $1
+     group by e.unit_id`,
+    [ownerId],
+  );
+  for (const row of errorStats) {
+    const recurring = Boolean(row.flagged) || Number(row.n) > 1;
+    await sql(
+      `update unit_memories set is_recurring = $1, updated_at = now()
+       where owner_id = $2 and unit_id = $3`,
+      [recurring, ownerId, row.unit_id],
+    );
+  }
+
+  const tracking = await sql<{ unit_id: number }>(
+    `select distinct t.unit_id
+     from session_tracking t
+     join sessions s on s.id = t.session_id
+     where s.owner_id = $1 and t.unit_id is not null`,
+    [ownerId],
+  );
+  for (const row of tracking) {
+    await sql(
+      `update unit_memories set is_tracking = true, updated_at = now()
+       where owner_id = $1 and unit_id = $2`,
+      [ownerId, row.unit_id],
+    );
+  }
+
+  const history = await sql<{ parsed_payload: unknown; focus_next_lesson: string | null }>(
+    "select parsed_payload, focus_next_lesson from sessions where owner_id = $1",
+    [ownerId],
+  );
+  const focusKeys = new Set<string>();
+  for (const session of history) {
+    const payload = readJson<{
+      focus?: string[];
+      focus_unit_keys?: string[];
+    }>(session.parsed_payload, {});
+    for (const key of payload.focus_unit_keys ?? []) focusKeys.add(key);
+    for (const line of payload.focus ?? []) {
+      for (const key of matchFocusKeys(line)) focusKeys.add(key);
+    }
+    if (session.focus_next_lesson) {
+      for (const key of matchFocusKeys(session.focus_next_lesson)) focusKeys.add(key);
+    }
+  }
+  for (const key of focusKeys) {
+    const unit = await getOrCreateUnit(key);
+    const existing = await memoryRow(ownerId, unit.id);
+    if (!existing) {
       await sql(
         `insert into unit_memories (owner_id, unit_id, stability_days, last_seen_at)
          values ($1, $2, $3, null)
@@ -262,13 +322,11 @@ export async function ingestSession(
       );
     }
     await sql(
-      `update unit_memories set is_tracking = $1, is_focus = $2, updated_at = now()
-       where owner_id = $3 and unit_id = $4`,
-      [trackingKeys.has(key), focusKeys.has(key), ownerId, unit.id],
+      `update unit_memories set is_focus = true, updated_at = now()
+       where owner_id = $1 and unit_id = $2`,
+      [ownerId, unit.id],
     );
   }
-
-  return { sessionId, parsed };
 }
 
 async function rankUnits(ownerId: string, now: Date): Promise<RankedUnit[]> {
@@ -313,11 +371,9 @@ export type StudyPackOut = {
     prompt: string;
     answer: string;
     why: string;
-    unit_keys: string[];
-    skill_tags: string[];
     order_index: number;
   }[];
-  speaking_prompts: { prompt: string; unit_keys: string[]; why: string }[];
+  speaking_prompts: { prompt: string; why: string }[];
 };
 
 function packFromRows(
@@ -352,14 +408,79 @@ function packFromRows(
       .map((card) => ({
         id: card.id,
         card_type: card.card_type,
-        prompt: card.prompt,
-        answer: card.answer,
-        why: card.why,
-        unit_keys: readJson<string[]>(card.unit_keys, []),
-        skill_tags: readJson<string[]>(card.skill_tags, []),
+        prompt: humanizeText(card.prompt),
+        answer: humanizeText(card.answer),
+        why: humanizeText(card.why),
         order_index: card.order_index,
       })),
-    speaking_prompts: readJson(pack.speaking_prompts, []),
+    speaking_prompts: readJson<{ prompt: string; unit_keys?: string[]; why: string }[]>(
+      pack.speaking_prompts,
+      [],
+    ).map((item) => ({
+      prompt: humanizeText(item.prompt),
+      why: humanizeText(item.why),
+    })),
+  };
+}
+
+export type SessionLogOut = {
+  id: number;
+  ingested_at: string;
+  source: string;
+  error_count: number;
+  preview: string;
+};
+
+export async function listSessionLogs(ownerId: string): Promise<SessionLogOut[]> {
+  const rows = await sql<{
+    id: number;
+    ingested_at: Date | string;
+    source: string;
+    raw_log: string;
+    error_count: number;
+  }>(
+    `select s.id, s.ingested_at, s.source, s.raw_log,
+            (select count(*)::int from session_errors e where e.session_id = s.id) as error_count
+     from sessions s
+     where s.owner_id = $1
+     order by s.ingested_at desc, s.id desc`,
+    [ownerId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    ingested_at: asDate(row.ingested_at)?.toISOString() ?? "",
+    source: row.source,
+    error_count: Number(row.error_count),
+    preview: row.raw_log.replace(/\s+/g, " ").trim().slice(0, 180),
+  }));
+}
+
+export async function getSessionLog(
+  ownerId: string,
+  sessionId: number,
+): Promise<(SessionLogOut & { raw_log: string }) | null> {
+  const rows = await sql<{
+    id: number;
+    ingested_at: Date | string;
+    source: string;
+    raw_log: string;
+    error_count: number;
+  }>(
+    `select s.id, s.ingested_at, s.source, s.raw_log,
+            (select count(*)::int from session_errors e where e.session_id = s.id) as error_count
+     from sessions s
+     where s.owner_id = $1 and s.id = $2`,
+    [ownerId, sessionId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    ingested_at: asDate(row.ingested_at)?.toISOString() ?? "",
+    source: row.source,
+    error_count: Number(row.error_count),
+    preview: row.raw_log.replace(/\s+/g, " ").trim().slice(0, 180),
+    raw_log: row.raw_log,
   };
 }
 
@@ -529,10 +650,6 @@ export async function submitReview(ownerId: string, cardId: number, result: Revi
     review_id: inserted[0].id,
     card_id: card.id,
     result,
-    p_before: pBefore,
-    s_before: sBefore,
-    s_after: sAfter,
-    units: Object.keys(sAfter),
   };
 }
 
