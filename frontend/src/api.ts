@@ -30,13 +30,17 @@ export type StudyPack = {
 };
 
 export type UnitRow = {
-  key: string;
+  key?: string;
   label: string;
   kind: string;
-  skill_tags: string[];
+  skill_tags?: string[];
   stability_days: number;
+  last_seen_at?: string | null;
+  next_review_at?: string | null;
   p_k: number;
   urgency: number;
+  due?: boolean;
+  queue?: string;
   error_count: number;
   success_count: number;
   is_recurring: boolean;

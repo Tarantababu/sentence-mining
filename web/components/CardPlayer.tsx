@@ -144,7 +144,9 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
       className="card-in rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)] md:p-10"
     >
       <div className="mb-7 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
-        <span>{CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}</span>
+        <span>
+          {card.queue === "stretch" ? "Stretch" : "Due"} · {CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}
+        </span>
         <span>
           {index + 1} / {total}
         </span>

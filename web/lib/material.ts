@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { CATALOG_BY_KEY } from "./catalog";
-import { RankedUnit, rotateCardTypes, selectCardGroups } from "./memory";
+import { RankedUnit, rotateCardTypes, selectDueThenStretch } from "./memory";
 import { completeJson, generatedPackSchema } from "./openai";
 
 export type DraftCard = {
@@ -10,6 +10,7 @@ export type DraftCard = {
   why: string;
   unit_keys: string[];
   skill_tags: string[];
+  queue: "due" | "stretch";
 };
 
 export type DraftPrompt = {
@@ -48,7 +49,7 @@ export function fallbackPack(
   budgetCards: number,
   budgetPrompts: number,
 ): DraftPack {
-  const groups = selectCardGroups(ranked, budgetCards);
+  const groups = selectDueThenStretch(ranked, budgetCards);
   const types = rotateCardTypes(groups.length);
   const cards: DraftCard[] = groups.map((group, index) => {
     const cardType = types[index];
@@ -59,6 +60,7 @@ export function fallbackPack(
     for (const unit of group) {
       for (const tag of unit.skill_tags) if (!tags.includes(tag)) tags.push(tag);
     }
+    const queue = group.some((unit) => unit.queue === "due") ? "due" : "stretch";
     return {
       card_type: cardType,
       prompt,
@@ -66,6 +68,7 @@ export function fallbackPack(
       why,
       unit_keys: group.map((unit) => unit.key),
       skill_tags: tags,
+      queue,
     };
   });
 
@@ -107,6 +110,7 @@ function validateLlmPack(
       why: card.why.trim(),
       unit_keys: keys,
       skill_tags: tags,
+      queue: index < payload.cards.length / 2 ? "due" : "stretch",
     });
   }
   if (!cards.length || cards.length !== Math.min(budgetCards, payload.cards.length)) return null;
@@ -131,11 +135,12 @@ export async function generatePack(
   const skillLookup = Object.fromEntries(ranked.map((unit) => [unit.key, unit.skill_tags]));
   const user = {
     units: ranked.slice(0, 20).map((unit) => ({
-      key: unit.key,
       label: unit.label,
       kind: unit.kind,
       urgency: Number(unit.urgency.toFixed(4)),
       p_k: Number(unit.p_k.toFixed(4)),
+      queue: unit.queue,
+      due: unit.due,
     })),
     skeleton_cards: skeleton.cards.map((card) => ({
       card_type: card.card_type,
@@ -143,6 +148,7 @@ export async function generatePack(
       prompt: card.prompt,
       answer: card.answer,
       why: card.why,
+      queue: card.queue,
     })),
     budget_cards: budgetCards,
     budget_prompts: budgetPrompts,
@@ -150,6 +156,7 @@ export async function generatePack(
       "Each card is a full natural English sentence: fill-in-the-blank, a sentence to fix, or a sentence to rewrite.",
       "prompt, answer, and why must be human language only — never unit slugs such as attend_no_prep.",
       "Keep unit_keys in the JSON field only, never inside the sentence.",
+      "Keep skeleton order: due reviews first, then i+1 stretch. One or two targets per card.",
       "Surrounding English must be adult i+1 (easy except the target).",
       "Preserve card_type and the intended answer meaning.",
     ],
@@ -164,6 +171,9 @@ export async function generatePack(
   if (llm == null) return skeleton;
   const validated = validateLlmPack(llm, allowed, budgetCards, budgetPrompts, skillLookup);
   if (validated == null || validated.cards.length < skeleton.cards.length) return skeleton;
+  for (const [index, card] of validated.cards.entries()) {
+    card.queue = skeleton.cards[index]?.queue ?? card.queue;
+  }
   if (validated.speaking_prompts.length < Math.min(budgetPrompts, 1) && budgetPrompts) {
     validated.speaking_prompts = skeleton.speaking_prompts;
     validated.generator = "openai";

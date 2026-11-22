@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 SECONDS_PER_DAY = 86400.0
@@ -18,6 +18,7 @@ FOCUS_BOOST = 0.50
 RECURRING_BOOST = 0.40
 TRACKING_BOOST = 0.20
 REDUCTION_CAP = 0.85
+P_REVIEW = 0.9
 
 ReviewResult = Literal["knew_it", "shaky", "missed"]
 
@@ -79,6 +80,35 @@ def urgency(
     is_tracking: bool = False,
 ) -> float:
     return weight(is_focus, is_recurring, is_tracking) * (1.0 - p_k)
+
+
+def review_interval_days(stability_days: float) -> float:
+    return max(float(stability_days), S_MIN) * -math.log(P_REVIEW)
+
+
+def next_review_at(
+    stability_days: float,
+    last_seen_at: datetime | None,
+    now: datetime,
+) -> datetime:
+    if last_seen_at is None:
+        return now
+    last = last_seen_at if last_seen_at.tzinfo else last_seen_at.replace(tzinfo=timezone.utc)
+    return last + timedelta(days=review_interval_days(stability_days))
+
+
+def queue_role(memory: MemorySnapshot, p_k: float, now: datetime) -> str:
+    never_practiced = memory.last_seen_at is None
+    if never_practiced and memory.error_count > 0:
+        return "due"
+    if never_practiced:
+        return "stretch"
+    nxt = next_review_at(memory.stability_days, memory.last_seen_at, now)
+    if p_k < P_REVIEW or nxt <= now:
+        return "due"
+    if memory.is_focus or memory.is_tracking:
+        return "stretch"
+    return "upcoming"
 
 
 @dataclass(frozen=True)
@@ -179,6 +209,12 @@ class RankedUnit:
     is_recurring: bool
     is_focus: bool
     is_tracking: bool
+    error_count: int = 0
+    success_count: int = 0
+    last_seen_at: datetime | None = None
+    next_review_at: datetime | None = None
+    due: bool = False
+    queue: str = "due"
 
 
 def select_card_groups(
@@ -187,6 +223,7 @@ def select_card_groups(
     *,
     max_units_per_card: int = 2,
     coverage_alpha: float = 1.0,
+    wrap: bool = True,
 ) -> list[list[RankedUnit]]:
     """Greedy submodular pick: urgency / (1 + coverage), 1–2 units per card."""
     remaining = list(ranked)
@@ -204,6 +241,8 @@ def select_card_groups(
     pool = list(ranked)
     while len(groups) < budget_cards:
         if not remaining:
+            if not wrap:
+                break
             remaining = list(pool)
             if not remaining:
                 break
@@ -230,6 +269,18 @@ def select_card_groups(
             for tag in unit.skill_tags:
                 tag_counts[tag] = tag_counts.get(tag, 0) + 1
     return groups
+
+
+def select_due_then_stretch(ranked: list[RankedUnit], budget_cards: int) -> list[list[RankedUnit]]:
+    due = [unit for unit in ranked if unit.queue == "due"]
+    stretch = [unit for unit in ranked if unit.queue != "due"]
+    due_groups = select_card_groups(due, min(budget_cards, len(due)), wrap=False)
+    remaining = budget_cards - len(due_groups)
+    if remaining <= 0:
+        return due_groups[:budget_cards]
+    if stretch:
+        return (due_groups + select_card_groups(stretch, remaining, wrap=True))[:budget_cards]
+    return (due_groups + select_card_groups(due, remaining, wrap=True))[:budget_cards]
 
 
 def rotate_card_types(count: int) -> list[str]:

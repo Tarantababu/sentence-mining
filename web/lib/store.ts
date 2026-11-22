@@ -7,6 +7,8 @@ import {
   emptyMemory,
   MemorySnapshot,
   MemoryUpdate,
+  nextReviewAt,
+  queueRole,
   RankedUnit,
   ReviewResult,
   snapshotP,
@@ -329,16 +331,23 @@ async function rebuildFlagsFromHistory(ownerId: string): Promise<void> {
   }
 }
 
+function isTracked(snap: MemorySnapshot): boolean {
+  return snap.error_count + snap.success_count > 0 || snap.is_focus || snap.is_tracking || snap.is_recurring;
+}
+
 async function rankUnits(ownerId: string, now: Date): Promise<RankedUnit[]> {
   const units = await sql<UnitRow>("select * from units");
   const memories = await sql<MemoryRow>("select * from unit_memories where owner_id = $1", [
     ownerId,
   ]);
   const byUnit = new Map(memories.map((row) => [row.unit_id, row]));
-  const ranked: RankedUnit[] = units.map((unit) => {
+  const ranked: RankedUnit[] = [];
+  for (const unit of units) {
     const snap = snapshotFromRow(byUnit.get(unit.id));
+    if (!isTracked(snap)) continue;
     const [pK] = snapshotP(snap, now);
-    return {
+    const queue = queueRole(snap, pK, now);
+    ranked.push({
       key: unit.key,
       label: unit.label,
       kind: unit.kind,
@@ -353,9 +362,20 @@ async function rankUnits(ownerId: string, now: Date): Promise<RankedUnit[]> {
       is_recurring: snap.is_recurring,
       is_focus: snap.is_focus,
       is_tracking: snap.is_tracking,
-    };
+      error_count: snap.error_count,
+      success_count: snap.success_count,
+      last_seen_at: snap.last_seen_at,
+      next_review_at: nextReviewAt(snap.stability_days, snap.last_seen_at, now),
+      due: queue === "due",
+      queue,
+    });
+  }
+  ranked.sort((a, b) => {
+    const order = { due: 0, stretch: 1, upcoming: 2 };
+    if (order[a.queue] !== order[b.queue]) return order[a.queue] - order[b.queue];
+    if (a.queue === "due") return b.urgency - a.urgency;
+    return a.next_review_at.getTime() - b.next_review_at.getTime() || b.urgency - a.urgency;
   });
-  ranked.sort((a, b) => b.urgency - a.urgency);
   return ranked;
 }
 
@@ -365,12 +385,13 @@ export type StudyPackOut = {
   budget_cards: number;
   budget_prompts: number;
   generator: string;
-  cards: {
+    cards: {
     id: number;
     card_type: string;
     prompt: string;
     answer: string;
     why: string;
+    queue: "due" | "stretch";
     order_index: number;
   }[];
   speaking_prompts: { prompt: string; why: string }[];
@@ -393,6 +414,7 @@ function packFromRows(
     why: string;
     unit_keys: unknown;
     skill_tags: unknown;
+    queue?: string | null;
     order_index: number;
   }[],
 ): StudyPackOut {
@@ -411,6 +433,7 @@ function packFromRows(
         prompt: humanizeText(card.prompt),
         answer: humanizeText(card.answer),
         why: humanizeText(card.why),
+        queue: card.queue === "stretch" ? "stretch" : "due",
         order_index: card.order_index,
       })),
     speaking_prompts: readJson<{ prompt: string; unit_keys?: string[]; why: string }[]>(
@@ -492,9 +515,7 @@ export async function generateStudyPack(
   await ensureCatalog();
   const now = utcnow();
   const ranked = await rankUnits(ownerId, now);
-  let active = ranked.filter((item) => item.urgency > 0 || item.key in CATALOG_BY_KEY);
-  if (!active.length) active = ranked;
-  const draft = await generatePack(ownerId, active, budgetCards, budgetPrompts);
+  const draft = await generatePack(ownerId, ranked, budgetCards, budgetPrompts);
   const inserted = await sql<{
     id: number;
     generated_at: Date | string;
@@ -524,13 +545,14 @@ export async function generateStudyPack(
     why: string;
     unit_keys: unknown;
     skill_tags: unknown;
+    queue?: string | null;
     order_index: number;
   };
   const cards: CardRow[] = [];
   for (const [index, card] of draft.cards.entries()) {
     const rows = await sql<CardRow>(
-      `insert into study_cards (study_pack_id, card_type, prompt, answer, why, unit_keys, skill_tags, order_index)
-       values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
+      `insert into study_cards (study_pack_id, card_type, prompt, answer, why, unit_keys, skill_tags, queue, order_index)
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)
        returning *`,
       [
         pack.id,
@@ -540,6 +562,7 @@ export async function generateStudyPack(
         card.why,
         asJson(card.unit_keys),
         asJson(card.skill_tags),
+        card.queue,
         index,
       ],
     );
@@ -585,23 +608,22 @@ export async function listUnits(ownerId: string) {
     ownerId,
   ]);
   const byUnit = new Map(memories.map((row) => [row.unit_id, row]));
+  const dueCount = ranked.filter((item) => item.due).length;
   return {
     now: now.toISOString(),
+    due_count: dueCount,
     units: ranked.map((item) => {
       const unit = byKey.get(item.key)!;
       const snap = snapshotFromRow(byUnit.get(unit.id));
       return {
-        key: item.key,
         label: item.label,
         kind: item.kind,
-        skill_tags: item.skill_tags,
-        is_structural: !!unit.is_structural,
         stability_days: item.stability_days,
         last_seen_at: snap.last_seen_at?.toISOString() ?? null,
+        next_review_at: item.next_review_at.toISOString(),
         p_k: item.p_k,
-        urgency: item.urgency,
-        last_p: snap.last_p,
-        last_outcome: snap.last_outcome,
+        due: item.due,
+        queue: item.queue,
         error_count: snap.error_count,
         success_count: snap.success_count,
         is_recurring: item.is_recurring,

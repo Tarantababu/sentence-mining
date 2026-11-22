@@ -11,6 +11,7 @@ export const FOCUS_BOOST = 0.5;
 export const RECURRING_BOOST = 0.4;
 export const TRACKING_BOOST = 0.2;
 export const REDUCTION_CAP = 0.85;
+export const P_REVIEW = 0.9;
 
 export type ReviewResult = "knew_it" | "shaky" | "missed";
 export type Outcome = ReviewResult | "error" | "used_well";
@@ -35,6 +36,8 @@ export type MemoryUpdate = MemorySnapshot & {
   delta_t_days: number;
 };
 
+export type QueueRole = "due" | "stretch" | "upcoming";
+
 export type RankedUnit = {
   key: string;
   label: string;
@@ -46,6 +49,12 @@ export type RankedUnit = {
   is_recurring: boolean;
   is_focus: boolean;
   is_tracking: boolean;
+  error_count: number;
+  success_count: number;
+  last_seen_at: Date | null;
+  next_review_at: Date;
+  due: boolean;
+  queue: QueueRole;
 };
 
 export function utcnow(): Date {
@@ -92,6 +101,26 @@ export function urgency(
   flags: { is_focus?: boolean; is_recurring?: boolean; is_tracking?: boolean } = {},
 ): number {
   return weight(!!flags.is_focus, !!flags.is_recurring, !!flags.is_tracking) * (1 - pK);
+}
+
+export function reviewIntervalDays(stabilityDays: number): number {
+  return Math.max(stabilityDays, S_MIN) * -Math.log(P_REVIEW);
+}
+
+export function nextReviewAt(stabilityDays: number, lastSeenAt: Date | null, now: Date): Date {
+  if (!lastSeenAt) return now;
+  return new Date(lastSeenAt.getTime() + reviewIntervalDays(stabilityDays) * SECONDS_PER_DAY * 1000);
+}
+
+export function queueRole(memory: MemorySnapshot, pK: number, now: Date): QueueRole {
+  const neverPracticed = memory.last_seen_at == null;
+  if (neverPracticed && memory.error_count > 0) return "due";
+  if (neverPracticed) return "stretch";
+  if (pK < P_REVIEW || nextReviewAt(memory.stability_days, memory.last_seen_at, now) <= now) {
+    return "due";
+  }
+  if (memory.is_focus || memory.is_tracking) return "stretch";
+  return "upcoming";
 }
 
 export function snapshotP(memory: MemorySnapshot, now: Date): [number, number] {
@@ -169,6 +198,7 @@ export function selectCardGroups(
   budgetCards: number,
   maxUnitsPerCard = 2,
   coverageAlpha = 1,
+  wrap = true,
 ): RankedUnit[][] {
   let remaining = [...ranked];
   const selectedKeys = new Set<string>();
@@ -186,6 +216,7 @@ export function selectCardGroups(
   const pool = [...ranked];
   while (groups.length < budgetCards) {
     if (remaining.length === 0) {
+      if (!wrap) break;
       remaining = [...pool];
       if (remaining.length === 0) break;
     }
@@ -211,6 +242,18 @@ export function selectCardGroups(
     }
   }
   return groups;
+}
+
+export function selectDueThenStretch(ranked: RankedUnit[], budgetCards: number): RankedUnit[][] {
+  const due = ranked.filter((unit) => unit.queue === "due");
+  const stretch = ranked.filter((unit) => unit.queue !== "due");
+  const dueGroups = selectCardGroups(due, Math.min(budgetCards, due.length), 2, 1, false);
+  const remaining = budgetCards - dueGroups.length;
+  if (remaining <= 0) return dueGroups.slice(0, budgetCards);
+  if (stretch.length) {
+    return [...dueGroups, ...selectCardGroups(stretch, remaining, 2, 1, true)].slice(0, budgetCards);
+  }
+  return [...dueGroups, ...selectCardGroups(due, remaining, 2, 1, true)].slice(0, budgetCards);
 }
 
 export function rotateCardTypes(count: number): string[] {

@@ -6,6 +6,7 @@ export type StudyCard = {
   prompt: string;
   answer: string;
   why: string;
+  queue?: "due" | "stretch";
   order_index: number;
 };
 
@@ -25,13 +26,14 @@ export type StudyPack = {
 };
 
 export type UnitRow = {
-  key: string;
   label: string;
   kind: string;
-  skill_tags: string[];
   stability_days: number;
+  last_seen_at: string | null;
+  next_review_at: string;
   p_k: number;
-  urgency: number;
+  due: boolean;
+  queue: "due" | "stretch" | "upcoming";
   error_count: number;
   success_count: number;
   is_recurring: boolean;
@@ -116,5 +118,5 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ card_id, result }),
     }),
-  units: () => request<{ units: UnitRow[]; now: string }>("/api/units"),
+  units: () => request<{ units: UnitRow[]; now: string; due_count: number }>("/api/units"),
 };

@@ -15,7 +15,7 @@ type View = "practice" | "logs" | "memory" | "settings";
 const TABS: { id: View; label: string }[] = [
   { id: "practice", label: "Practice" },
   { id: "logs", label: "Logs" },
-  { id: "memory", label: "Memory" },
+  { id: "memory", label: "Review" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -34,10 +34,14 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyPack, setBusyPack] = useState(false);
   const [logTick, setLogTick] = useState(0);
+  const [dueCount, setDueCount] = useState(0);
+  const [clock, setClock] = useState<string | undefined>();
 
   const refreshUnits = useCallback(async () => {
     const listed = await api.units();
     setUnits(listed.units);
+    setDueCount(listed.due_count);
+    setClock(listed.now);
   }, []);
 
   const load = useCallback(async () => {
@@ -81,10 +85,10 @@ export default function App() {
   }
 
   async function handleIngested(result: IngestResponse) {
-    setNotice(`Saved ${result.error_count} corrections to your log history.`);
+    setNotice(`Saved ${result.error_count} corrections. Memory now uses every log, not only this one.`);
     setIngestOpen(false);
     setLogTick((value) => value + 1);
-    setView("logs");
+    setView("memory");
     setBusyPack(true);
     try {
       const generated = await api.generatePack();
@@ -130,6 +134,7 @@ export default function App() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-moss">Sentence Mining</p>
           <h1 className="font-serif text-3xl font-semibold tracking-tight">Practice the gaps</h1>
+          <p className="mt-1 text-sm text-ink/50">Due reviews first, then a little i+1 stretch.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">{streak} day streak</span>
@@ -139,6 +144,7 @@ export default function App() {
           <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
             {currentStep}/{progress.total || 0}
           </span>
+          <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">{dueCount} due</span>
         </div>
       </header>
 
@@ -190,9 +196,10 @@ export default function App() {
                 {finished ? (
                   <p className="mt-3 text-ink/70">
                     {finished.knew_it} solid · {finished.shaky} shaky · {finished.missed} missed.
+                    Those grades just wrote back into your review memory.
                   </p>
                 ) : (
-                  <p className="mt-3 text-ink/70">Generate a new set from everything you have pasted.</p>
+                  <p className="mt-3 text-ink/70">Generate a set from the cumulative review queue.</p>
                 )}
                 <div className="mt-6 flex flex-wrap gap-2">
                   <button
@@ -201,6 +208,9 @@ export default function App() {
                     disabled={busyPack}
                   >
                     {busyPack ? "Building…" : "New lesson"}
+                  </button>
+                  <button className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold" onClick={() => setView("memory")}>
+                    Review queue
                   </button>
                   <button className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold" onClick={() => setIngestOpen(true)}>
                     Paste a log
@@ -215,7 +225,7 @@ export default function App() {
         {view === "logs" && !connecting && (
           <LogHistory refreshToken={logTick} onPaste={() => setIngestOpen(true)} />
         )}
-        {view === "memory" && !connecting && <UnitInspector units={units} />}
+        {view === "memory" && !connecting && <UnitInspector units={units} now={clock} />}
         {view === "settings" && !connecting && <SettingsPanel />}
       </main>
 

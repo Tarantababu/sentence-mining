@@ -22,6 +22,9 @@ class UnitMemoryOut(BaseModel):
     is_recurring: bool
     is_focus: bool
     is_tracking: bool
+    due: bool = False
+    next_review_at: datetime | None = None
+    queue: str = "due"
 
 
 class UnitsResponse(BaseModel):

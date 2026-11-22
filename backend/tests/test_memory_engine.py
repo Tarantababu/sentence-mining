@@ -65,3 +65,35 @@ def test_apply_outcome_error_does_not_touch_last_seen() -> None:
     assert update.error_count == 1
     assert update.is_recurring is True
     assert update.stability_days < 4.0
+
+
+def test_unreviewed_error_is_due_and_success_schedules_next() -> None:
+    unseen = MemorySnapshot(
+        stability_days=1.0,
+        last_seen_at=None,
+        last_p=None,
+        last_outcome=None,
+        error_count=2,
+        success_count=0,
+        is_recurring=True,
+        is_focus=False,
+        is_tracking=False,
+    )
+    p_k, _ = mem.snapshot_p(unseen, NOW)
+    assert mem.queue_role(unseen, p_k, NOW) == "due"
+    seen = MemorySnapshot(
+        stability_days=10.0,
+        last_seen_at=NOW,
+        last_p=1.0,
+        last_outcome=1,
+        error_count=1,
+        success_count=1,
+        is_recurring=True,
+        is_focus=False,
+        is_tracking=False,
+    )
+    p_seen, _ = mem.snapshot_p(seen, NOW)
+    nxt = mem.next_review_at(seen.stability_days, seen.last_seen_at, NOW)
+    assert p_seen > mem.P_REVIEW
+    assert nxt > NOW
+    assert mem.queue_role(seen, p_seen, NOW) == "upcoming"

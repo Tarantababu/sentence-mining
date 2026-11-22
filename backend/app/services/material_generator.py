@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.schemas.openai_payloads import GeneratedPack
-from app.services.memory_engine import RankedUnit, rotate_card_types, select_card_groups
+from app.services.memory_engine import RankedUnit, rotate_card_types, select_due_then_stretch
 from app.services.openai_client import complete_json
 from app.services.unit_catalog import CATALOG_BY_KEY
 
@@ -61,7 +61,7 @@ def fallback_pack(
     budget_cards: int,
     budget_prompts: int,
 ) -> DraftPack:
-    groups = select_card_groups(ranked, budget_cards)
+    groups = select_due_then_stretch(ranked, budget_cards)
     types = rotate_card_types(len(groups))
     cards: list[DraftCard] = []
     for index, group in enumerate(groups):

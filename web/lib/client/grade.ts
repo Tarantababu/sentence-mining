@@ -39,9 +39,9 @@ export function autoGrade(guess: string, answer: string): ReviewResult {
 }
 
 export const GRADE_COPY: Record<ReviewResult, { label: string; hint: string }> = {
-  knew_it: { label: "Correct", hint: "Logged as knew it" },
-  shaky: { label: "Close", hint: "Logged as shaky" },
-  missed: { label: "Not quite", hint: "Logged as missed" },
+  knew_it: { label: "Correct", hint: "Memory lengthened" },
+  shaky: { label: "Close", hint: "A light boost to memory" },
+  missed: { label: "Not quite", hint: "Memory shortened — back on the due list" },
 };
 
 export const CARD_TYPE_LABEL: Record<string, string> = {

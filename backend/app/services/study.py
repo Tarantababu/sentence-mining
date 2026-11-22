@@ -18,7 +18,6 @@ from app.services import memory_engine as mem
 from app.services.ingest import _memory_row, _persist_memory, _snapshot
 from app.services.material_generator import generate_pack
 from app.services.memory_engine import RankedUnit
-from app.services.unit_catalog import CATALOG_BY_KEY
 
 
 def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
@@ -26,7 +25,16 @@ def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
     ranked: list[RankedUnit] = []
     for unit, memory in rows:
         snap = _snapshot(memory)
+        tracked = (
+            snap.error_count + snap.success_count > 0
+            or snap.is_focus
+            or snap.is_tracking
+            or snap.is_recurring
+        )
+        if not tracked:
+            continue
         p_k, _ = mem.snapshot_p(snap, now)
+        queue = mem.queue_role(snap, p_k, now)
         ranked.append(
             RankedUnit(
                 key=unit.key,
@@ -44,9 +52,20 @@ def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
                 is_recurring=snap.is_recurring,
                 is_focus=snap.is_focus,
                 is_tracking=snap.is_tracking,
+                error_count=snap.error_count,
+                success_count=snap.success_count,
+                last_seen_at=snap.last_seen_at,
+                next_review_at=mem.next_review_at(snap.stability_days, snap.last_seen_at, now),
+                due=queue == "due",
+                queue=queue,
             )
         )
-    ranked.sort(key=lambda item: item.urgency, reverse=True)
+    ranked.sort(
+        key=lambda item: (
+            {"due": 0, "stretch": 1, "upcoming": 2}.get(item.queue, 9),
+            -item.urgency if item.queue == "due" else 0,
+        )
+    )
     return ranked
 
 
@@ -92,10 +111,7 @@ def generate_study_pack(
 ) -> StudyPack:
     now = now or mem.utcnow()
     ranked = _rank_units(db, now)
-    active = [item for item in ranked if item.urgency > 0 or item.key in CATALOG_BY_KEY]
-    if not active:
-        active = ranked
-    draft = generate_pack(active, budget_cards=budget_cards, budget_prompts=budget_prompts)
+    draft = generate_pack(ranked, budget_cards=budget_cards, budget_prompts=budget_prompts)
     pack = StudyPack(
         generated_at=now,
         budget_cards=budget_cards,
@@ -167,6 +183,9 @@ def list_units(db: Session, now: datetime | None = None) -> UnitsResponse:
                 is_recurring=item.is_recurring,
                 is_focus=item.is_focus,
                 is_tracking=item.is_tracking,
+                due=item.due,
+                next_review_at=item.next_review_at,
+                queue=item.queue,
             )
         )
     return UnitsResponse(units=out, now=now)

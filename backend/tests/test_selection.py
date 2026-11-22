@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.services.memory_engine import RankedUnit, rotate_card_types, select_card_groups
+from app.services.memory_engine import (
+    RankedUnit,
+    rotate_card_types,
+    select_card_groups,
+    select_due_then_stretch,
+)
 from app.services.material_generator import fallback_pack
 
 
@@ -56,6 +61,22 @@ def test_card_type_diversity_cap() -> None:
     assert set(types) == {"fill_in_blank", "fix_error", "transform_sentence"}
     for name in set(types):
         assert types.count(name) <= 4
+
+
+def test_due_items_selected_before_stretch() -> None:
+    due_a = _unit("attend_no_prep", 2.4, ["verb-preposition"], True)
+    due_a.queue = "due"
+    due_a.due = True
+    due_b = _unit("do_the_school_run", 2.1, ["chunks"], True)
+    due_b.queue = "due"
+    due_b.due = True
+    stretch = _unit("by_hand", 0.4, ["chunks"])
+    stretch.queue = "stretch"
+    stretch.due = False
+    groups = select_due_then_stretch([stretch, due_a, due_b], budget_cards=3)
+    assert groups[0][0].key in {"attend_no_prep", "do_the_school_run"}
+    assert groups[1][0].key in {"attend_no_prep", "do_the_school_run"}
+    assert groups[2][0].key == "by_hand"
 
 
 def test_fallback_pack_respects_budget() -> None:
