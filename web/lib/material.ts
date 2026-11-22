@@ -110,7 +110,7 @@ function validateLlmPack(
       why: card.why.trim(),
       unit_keys: keys,
       skill_tags: tags,
-      queue: index < payload.cards.length / 2 ? "due" : "stretch",
+      queue: "due",
     });
   }
   if (!cards.length || cards.length !== Math.min(budgetCards, payload.cards.length)) return null;

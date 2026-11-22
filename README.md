@@ -59,10 +59,11 @@ See `.env.example`. Important keys:
 ## API
 
 - `POST /api/sessions/ingest`
+- `GET /api/sessions` and `GET /api/sessions/{id}`
 - `GET /api/study-pack/latest`
-- `POST /api/study-pack/generate`
+- `POST /api/study-pack/generate` optional `{ due_only, stretch_only }`
 - `POST /api/reviews/submit` body: `{ "card_id", "result": "knew_it"|"shaky"|"missed" }`
-- `GET /api/units`
+- `GET /api/units` (`due_count`, ranked queue)
 - `GET /api/health`
 
 ## Hosted web app

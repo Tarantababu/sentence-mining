@@ -10,6 +10,7 @@ type Props = {
   now?: string;
   busy?: boolean;
   onReviewDue: (startIndex?: number) => void;
+  onStretch?: () => void;
 };
 
 function Chip({ children, tone }: { children: string; tone: "rose" | "amber" | "sky" }) {
@@ -60,7 +61,7 @@ function SkillCard({ unit, now, rank }: { unit: UnitRow; now: Date; rank?: numbe
   );
 }
 
-export default function UnitInspector({ units, dueCards, now, busy, onReviewDue }: Props) {
+export default function UnitInspector({ units, dueCards, now, busy, onReviewDue, onStretch }: Props) {
   const clock = now ? new Date(now) : new Date();
   const due = units.filter((unit) => unit.due);
   const rest = units.filter((unit) => !unit.due);
@@ -84,6 +85,15 @@ export default function UnitInspector({ units, dueCards, now, busy, onReviewDue 
           >
             {busy ? "Building…" : due.length ? "Review due first" : "Nothing due"}
           </button>
+          {onStretch && rest.length > 0 && due.length === 0 && (
+            <button
+              className="rounded-2xl bg-ink px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={onStretch}
+              disabled={busy}
+            >
+              Try a stretch
+            </button>
+          )}
           <span className="rounded-full bg-sand px-3 py-1.5 text-sm">{rest.length} later</span>
         </div>
       </section>
@@ -105,7 +115,9 @@ export default function UnitInspector({ units, dueCards, now, busy, onReviewDue 
                     <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/40">
                       {index + 1}. {CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}
                     </span>
-                    <span className="mt-1 block font-medium leading-snug">{card.prompt}</span>
+                    <span className="mt-1 block font-medium leading-snug">
+                      {card.prompt.replace(/^(Complete:|Fix:|Rewrite[^:]*:)\s*/i, "")}
+                    </span>
                   </span>
                   <span className="shrink-0 rounded-full bg-leaf px-3 py-1 text-xs font-semibold text-[#123016]">
                     Review

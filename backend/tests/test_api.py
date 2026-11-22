@@ -59,3 +59,24 @@ def test_ingest_generate_units_and_review_roundtrip(client: TestClient) -> None:
     assert body["s_after"]
     for key, after in body["s_after"].items():
         assert after >= body["s_before"][key]
+
+    listed = units.json()
+    assert listed["due_count"] == sum(1 for item in listed["units"] if item["due"])
+    assert listed["due_count"] >= 1
+
+    due_pack = client.post(
+        "/api/study-pack/generate",
+        json={"budget_cards": 8, "budget_prompts": 3, "due_only": True},
+    )
+    assert due_pack.status_code == 200, due_pack.text
+    due_cards = due_pack.json()["cards"]
+    assert due_cards
+    assert all(card["queue"] == "due" for card in due_cards)
+
+    sessions = client.get("/api/sessions")
+    assert sessions.status_code == 200
+    logs = sessions.json()["sessions"]
+    assert logs
+    detail = client.get(f"/api/sessions/{logs[0]['id']}")
+    assert detail.status_code == 200
+    assert "You said" in (detail.json().get("raw_log") or "")

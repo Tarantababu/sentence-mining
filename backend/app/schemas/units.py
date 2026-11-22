@@ -30,3 +30,4 @@ class UnitMemoryOut(BaseModel):
 class UnitsResponse(BaseModel):
     units: list[UnitMemoryOut]
     now: datetime
+    due_count: int = 0

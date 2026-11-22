@@ -87,6 +87,7 @@ def pack_to_response(pack: StudyPack) -> StudyPackResponse:
             why=card.why,
             unit_keys=list(card.unit_keys or []),
             skill_tags=list(card.skill_tags or []),
+            queue=card.queue or "due",
             order_index=card.order_index,
         )
         for card in pack.cards
@@ -107,10 +108,21 @@ def generate_study_pack(
     *,
     budget_cards: int = 8,
     budget_prompts: int = 3,
+    due_only: bool = False,
+    stretch_only: bool = False,
     now: datetime | None = None,
 ) -> StudyPack:
     now = now or mem.utcnow()
     ranked = _rank_units(db, now)
+    if due_only:
+        ranked = [unit for unit in ranked if unit.due]
+    elif stretch_only:
+        ranked = [unit for unit in ranked if not unit.due]
+    if ranked:
+        budget_cards = min(budget_cards, len(ranked))
+    else:
+        budget_cards = 0
+        budget_prompts = 0
     draft = generate_pack(ranked, budget_cards=budget_cards, budget_prompts=budget_prompts)
     pack = StudyPack(
         generated_at=now,
@@ -134,6 +146,7 @@ def generate_study_pack(
                 why=card.why,
                 unit_keys=card.unit_keys,
                 skill_tags=card.skill_tags,
+                queue=card.queue,
                 order_index=index,
             )
         )
@@ -188,7 +201,7 @@ def list_units(db: Session, now: datetime | None = None) -> UnitsResponse:
                 queue=item.queue,
             )
         )
-    return UnitsResponse(units=out, now=now)
+    return UnitsResponse(units=out, now=now, due_count=sum(1 for item in out if item.due))
 
 
 def submit_review(db: Session, card_id: int, result: ReviewResult) -> Review:

@@ -134,6 +134,7 @@ class StudyCard(Base):
     why: Mapped[str] = mapped_column(Text, default="")
     unit_keys: Mapped[list] = mapped_column(JSON, default=list)
     skill_tags: Mapped[list] = mapped_column(JSON, default=list)
+    queue: Mapped[str] = mapped_column(String(16), default="due")
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
     study_pack: Mapped[StudyPack] = relationship(back_populates="cards")

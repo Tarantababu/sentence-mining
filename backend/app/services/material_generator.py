@@ -16,6 +16,7 @@ class DraftCard:
     why: str
     unit_keys: list[str]
     skill_tags: list[str]
+    queue: str = "due"
 
 
 @dataclass
@@ -38,16 +39,16 @@ def _template_for(unit: RankedUnit, card_type: str) -> tuple[str, str, str]:
         return defn.templates[card_type]
     label = unit.label
     if card_type == "fill_in_blank":
-        return (f"Complete the natural phrase for: {label}.", label, f"Target unit: {label}.")
+        return (f"I need to _____ before dinner.", label, f"Use the natural phrase: {label}.")
     if card_type == "fix_error":
         return (
-            f"Fix the sentence so it uses {label} correctly.",
-            label,
-            f"Focus on {label}.",
+            f"Fix: I did {label} wrong in that sentence.",
+            f"I used {label} correctly.",
+            f"Keep {label} as a set phrase.",
         )
     return (
-        f"Rewrite a short everyday sentence that uses {label}.",
-        label,
+        f"Rewrite: I will mention {label} in a short everyday sentence.",
+        f"I'll use {label} in a short everyday sentence.",
         f"Keep the surrounding English simple; target {label}.",
     )
 
@@ -75,6 +76,7 @@ def fallback_pack(
             for tag in unit.skill_tags:
                 if tag not in tags:
                     tags.append(tag)
+        queue = "due" if any(unit.queue == "due" for unit in group) else "stretch"
         cards.append(
             DraftCard(
                 card_type=card_type,
@@ -83,6 +85,7 @@ def fallback_pack(
                 why=why,
                 unit_keys=[unit.key for unit in group],
                 skill_tags=tags,
+                queue=queue,
             )
         )
 
@@ -95,7 +98,7 @@ def fallback_pack(
                     f"“{unit.label}”. Keep everything else easy."
                 ),
                 unit_keys=[unit.key],
-                why=f"Speak this unit because urgency is high ({unit.urgency:.2f}).",
+                why="This phrase needs a spoken pass in a real conversation.",
             )
         )
     if budget_prompts > len(prompts) and len(ranked) >= 2:
@@ -138,6 +141,7 @@ def _validate_llm_pack(
                 why=card.why.strip(),
                 unit_keys=keys,
                 skill_tags=tags,
+                queue="due",
             )
         )
     if len(cards) != min(budget_cards, len(payload.cards)) or not cards:
@@ -167,11 +171,12 @@ def generate_pack(
     user = {
         "units": [
             {
-                "key": unit.key,
                 "label": unit.label,
                 "kind": unit.kind,
                 "urgency": round(unit.urgency, 4),
                 "p_k": round(unit.p_k, 4),
+                "queue": unit.queue,
+                "due": unit.due,
             }
             for unit in ranked[:20]
         ],
@@ -182,20 +187,25 @@ def generate_pack(
                 "prompt": card.prompt,
                 "answer": card.answer,
                 "why": card.why,
+                "queue": card.queue,
             }
             for card in skeleton.cards
         ],
         "budget_cards": budget_cards,
         "budget_prompts": budget_prompts,
         "constraints": [
-            "Each card targets 1-2 of the provided unit keys only.",
-            "Surrounding English must be natural, adult, and i+1 (easy except the target).",
+            "Each card is a full natural English sentence: fill-in-the-blank, a sentence to fix, or a sentence to rewrite.",
+            "prompt, answer, and why must be human language only — never unit slugs such as attend_no_prep.",
+            "Keep unit_keys in the JSON field only, never inside the sentence.",
+            "Keep skeleton order: due reviews first, then i+1 stretch. One or two targets per card.",
+            "Surrounding English must be adult i+1 (easy except the target).",
             "Preserve card_type and the intended answer meaning.",
-            "Return JSON: cards[], speaking_prompts[].",
         ],
     }
     system = (
-        "You write short i+1 English practice cards for an adult learner. "
+        "You write short i+1 English sentence cards for an adult learner. "
+        "Each prompt is a natural sentence, never a debug label. "
+        "Never put unit slugs in prompt, answer, or why. "
         "Return only JSON matching the schema {cards:[{card_type,prompt,answer,why,unit_keys}],"
         "speaking_prompts:[{prompt,unit_keys,why}]}."
     )
@@ -205,6 +215,8 @@ def generate_pack(
     validated = _validate_llm_pack(llm, allowed, budget_cards, budget_prompts, skill_lookup)
     if validated is None or len(validated.cards) < len(skeleton.cards):
         return skeleton
+    for index, card in enumerate(validated.cards):
+        card.queue = skeleton.cards[index].queue if index < len(skeleton.cards) else card.queue
     if len(validated.speaking_prompts) < min(budget_prompts, 1) and budget_prompts:
         validated.speaking_prompts = skeleton.speaking_prompts
         validated.generator = "openai"

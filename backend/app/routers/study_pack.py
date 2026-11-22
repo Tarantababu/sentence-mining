@@ -23,6 +23,10 @@ def generate(
 ) -> StudyPackResponse:
     body = payload or StudyPackGenerateRequest()
     pack = generate_study_pack(
-        db, budget_cards=body.budget_cards, budget_prompts=body.budget_prompts
+        db,
+        budget_cards=body.budget_cards,
+        budget_prompts=body.budget_prompts,
+        due_only=body.due_only,
+        stretch_only=body.stretch_only,
     )
     return pack_to_response(pack)

@@ -97,3 +97,33 @@ def test_unreviewed_error_is_due_and_success_schedules_next() -> None:
     assert p_seen > mem.P_REVIEW
     assert nxt > NOW
     assert mem.queue_role(seen, p_seen, NOW) == "upcoming"
+
+
+def test_fresh_error_or_miss_stays_due() -> None:
+    after_success_error = MemorySnapshot(
+        stability_days=10.0,
+        last_seen_at=NOW,
+        last_p=1.0,
+        last_outcome=0,
+        error_count=2,
+        success_count=1,
+        is_recurring=True,
+        is_focus=False,
+        is_tracking=False,
+    )
+    p_k, _ = mem.snapshot_p(after_success_error, NOW)
+    assert p_k > mem.P_REVIEW
+    assert mem.queue_role(after_success_error, p_k, NOW) == "due"
+    missed_card = MemorySnapshot(
+        stability_days=0.8,
+        last_seen_at=NOW,
+        last_p=0.4,
+        last_outcome=0,
+        error_count=1,
+        success_count=0,
+        is_recurring=False,
+        is_focus=False,
+        is_tracking=False,
+    )
+    p_miss, _ = mem.snapshot_p(missed_card, NOW)
+    assert mem.queue_role(missed_card, p_miss, NOW) == "due"

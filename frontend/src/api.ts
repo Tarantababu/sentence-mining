@@ -8,14 +8,15 @@ export type StudyCard = {
   prompt: string;
   answer: string;
   why: string;
-  unit_keys: string[];
-  skill_tags: string[];
+  unit_keys?: string[];
+  skill_tags?: string[];
+  queue?: "due" | "stretch";
   order_index: number;
 };
 
 export type SpeakingPrompt = {
   prompt: string;
-  unit_keys: string[];
+  unit_keys?: string[];
   why: string;
 };
 
@@ -35,12 +36,12 @@ export type UnitRow = {
   kind: string;
   skill_tags?: string[];
   stability_days: number;
-  last_seen_at?: string | null;
-  next_review_at?: string | null;
+  last_seen_at: string | null;
+  next_review_at: string;
   p_k: number;
-  urgency: number;
-  due?: boolean;
-  queue?: string;
+  urgency?: number;
+  due: boolean;
+  queue: "due" | "stretch" | "upcoming";
   error_count: number;
   success_count: number;
   is_recurring: boolean;
@@ -54,18 +55,27 @@ export type IngestResponse = {
   vocab_count: number;
   tracking_count: number;
   focus_next_lesson: string | null;
-  units_touched: string[];
-  parser: string;
+  units_touched?: string[];
+  parser?: string;
+};
+
+export type SessionLog = {
+  id: number;
+  ingested_at: string;
+  source: string;
+  error_count: number;
+  preview: string;
+  raw_log?: string;
 };
 
 export type ReviewResponse = {
   review_id: number;
   card_id: number;
   result: ReviewResult;
-  p_before: Record<string, number>;
-  s_before: Record<string, number>;
-  s_after: Record<string, number>;
-  units: string[];
+  p_before?: Record<string, number>;
+  s_before?: Record<string, number>;
+  s_after?: Record<string, number>;
+  units?: string[];
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -95,6 +105,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ raw_log }),
     }),
+  sessions: () => request<{ sessions: SessionLog[] }>("/api/sessions"),
+  session: (id: number) => request<SessionLog>(`/api/sessions/${id}`),
   latestPack: async () => {
     const response = await fetch(`${API_BASE}/api/study-pack/latest`, {
       headers: { "Content-Type": "application/json" },
@@ -103,15 +115,25 @@ export const api = {
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<StudyPack>;
   },
-  generatePack: () =>
+  generatePack: (opts?: {
+    budget_cards?: number;
+    budget_prompts?: number;
+    due_only?: boolean;
+    stretch_only?: boolean;
+  }) =>
     request<StudyPack>("/api/study-pack/generate", {
       method: "POST",
-      body: JSON.stringify({ budget_cards: 8, budget_prompts: 3 }),
+      body: JSON.stringify({
+        budget_cards: opts?.budget_cards ?? 8,
+        budget_prompts: opts?.budget_prompts ?? 3,
+        due_only: opts?.due_only === true,
+        stretch_only: opts?.stretch_only === true,
+      }),
     }),
   submitReview: (card_id: number, result: ReviewResult) =>
     request<ReviewResponse>("/api/reviews/submit", {
       method: "POST",
       body: JSON.stringify({ card_id, result }),
     }),
-  units: () => request<{ units: UnitRow[]; now: string }>("/api/units"),
+  units: () => request<{ units: UnitRow[]; now: string; due_count: number }>("/api/units"),
 };

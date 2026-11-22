@@ -12,7 +12,8 @@ type Props = {
 };
 
 function PromptBody({ card, live }: { card: StudyCard; live: boolean }) {
-  const parts = card.prompt.split(/_{3,}|…{3,}|_____+/);
+  const prompt = card.prompt.replace(/^(Complete:|Fix:|Rewrite[^:]*:)\s*/i, "");
+  const parts = prompt.split(/_{3,}|…{3,}|_____+/);
   if (card.card_type === "fill_in_blank" && parts.length > 1) {
     return (
       <p className="font-serif text-[2rem] font-semibold leading-[1.25] tracking-tight md:text-[2.35rem]">
@@ -33,7 +34,7 @@ function PromptBody({ card, live }: { card: StudyCard; live: boolean }) {
   }
   return (
     <p className="font-serif text-[2rem] font-semibold leading-[1.25] tracking-tight md:text-[2.35rem]">
-      {card.prompt.replace(/^(Complete:|Fix:|Rewrite[^:]*:)\s*/i, "")}
+      {prompt}
     </p>
   );
 }

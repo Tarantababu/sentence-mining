@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -24,3 +26,16 @@ class IngestResponse(BaseModel):
     units_touched: list[str]
     errors: list[ParsedErrorOut]
     parser: str
+
+
+class SessionLogOut(BaseModel):
+    id: int
+    ingested_at: datetime
+    source: str
+    error_count: int
+    preview: str
+    raw_log: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionLogOut]

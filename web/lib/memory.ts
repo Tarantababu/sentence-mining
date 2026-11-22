@@ -115,6 +115,7 @@ export function nextReviewAt(stabilityDays: number, lastSeenAt: Date | null, now
 export function queueRole(memory: MemorySnapshot, pK: number, now: Date): QueueRole {
   const neverPracticed = memory.last_seen_at == null;
   if (neverPracticed && memory.error_count > 0) return "due";
+  if (memory.last_outcome === 0 && memory.error_count > 0) return "due";
   if (neverPracticed) return "stretch";
   if (pK < P_REVIEW || nextReviewAt(memory.stability_days, memory.last_seen_at, now) <= now) {
     return "due";

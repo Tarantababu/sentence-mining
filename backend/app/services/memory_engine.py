@@ -101,6 +101,8 @@ def queue_role(memory: MemorySnapshot, p_k: float, now: datetime) -> str:
     never_practiced = memory.last_seen_at is None
     if never_practiced and memory.error_count > 0:
         return "due"
+    if memory.last_outcome == 0 and memory.error_count > 0:
+        return "due"
     if never_practiced:
         return "stretch"
     nxt = next_review_at(memory.stability_days, memory.last_seen_at, now)
