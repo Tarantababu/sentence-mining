@@ -58,27 +58,29 @@ export default function LogHistory({ refreshToken, onPaste }: Props) {
         </button>
       </div>
       {error && <p className="mt-4 text-sm text-rose-700">{error}</p>}
-      <ol className="mt-6 space-y-3">
-        {logs.map((log) => (
-          <li key={log.id} className="rounded-2xl border border-ink/8 bg-sand/60 p-4">
-            <button className="flex w-full items-start justify-between gap-3 text-left" onClick={() => void expand(log.id)}>
-              <div>
-                <p className="text-sm font-semibold">{formatTime(log.ingested_at)}</p>
-                <p className="mt-1 text-sm text-ink/60">{log.preview}</p>
-              </div>
-              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs text-ink/50">
-                {log.error_count} corrections
-              </span>
-            </button>
-            {openId === log.id && (
-              <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 font-mono text-xs leading-relaxed text-ink/80">
-                {full[log.id] || "Loading…"}
-              </pre>
-            )}
-          </li>
-        ))}
-        {logs.length === 0 && <p className="text-sm text-ink/50">No logs yet. Paste a speaking-session note.</p>}
-      </ol>
+      {logs.length === 0 && <p className="mt-6 text-sm text-ink/50">No logs yet. Paste a speaking-session note.</p>}
+      {logs.length > 0 && (
+        <ol className="mt-6 space-y-3">
+          {logs.map((log) => (
+            <li key={log.id} className="rounded-2xl border border-ink/8 bg-sand/60 p-4">
+              <button className="flex w-full items-start justify-between gap-3 text-left" onClick={() => void expand(log.id)}>
+                <div>
+                  <p className="text-sm font-semibold">{formatTime(log.ingested_at)}</p>
+                  <p className="mt-1 text-sm text-ink/60">{log.preview}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs text-ink/50">
+                  {log.error_count} corrections
+                </span>
+              </button>
+              {openId === log.id && (
+                <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 font-mono text-xs leading-relaxed text-ink/80">
+                  {full[log.id] || "Loading…"}
+                </pre>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

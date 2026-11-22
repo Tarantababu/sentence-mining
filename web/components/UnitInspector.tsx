@@ -56,7 +56,7 @@ export default function UnitInspector({ units }: { units: UnitRow[] }) {
           </li>
         ))}
         {ranked.length === 0 && (
-          <p className="px-6 py-8 text-sm text-ink/50">Paste a session log to start a memory trail.</p>
+          <li className="px-6 py-8 text-sm text-ink/50">Paste a session log to start a memory trail.</li>
         )}
       </ul>
     </section>

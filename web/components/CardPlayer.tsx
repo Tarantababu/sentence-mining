@@ -44,10 +44,12 @@ export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
   const card = pack.cards[index];
   const total = pack.cards.length;
   const longPrompt = card?.card_type === "transform_sentence" || card?.card_type === "fix_error";
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
 
   useEffect(() => {
-    onProgress(index, total);
-  }, [index, onProgress, total]);
+    onProgressRef.current(index, total);
+  }, [index, total]);
 
   useEffect(() => {
     inputRef.current?.focus();

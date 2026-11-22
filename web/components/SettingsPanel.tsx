@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { api } from "../lib/client/api";
 
 type Props = {
-  onSaved: (openaiConfigured: boolean) => void;
+  onSaved?: (openaiConfigured: boolean) => void;
 };
 
 export default function SettingsPanel({ onSaved }: Props) {
@@ -33,7 +33,7 @@ export default function SettingsPanel({ onSaved }: Props) {
       setConfigured(result.openai_configured);
       setKeyValue("");
       setMessage(result.saved ? "Key saved for this account." : "Personal key cleared.");
-      onSaved(result.openai_configured);
+      onSaved?.(result.openai_configured);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save key");
     } finally {
@@ -85,7 +85,7 @@ export default function SettingsPanel({ onSaved }: Props) {
                     setHasPersonal(false);
                     setConfigured(result.openai_configured);
                     setMessage("Personal key cleared.");
-                    onSaved(result.openai_configured);
+                    onSaved?.(result.openai_configured);
                   } finally {
                     setBusy(false);
                   }

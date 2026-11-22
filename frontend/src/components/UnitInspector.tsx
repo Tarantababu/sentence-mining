@@ -52,7 +52,9 @@ export default function UnitInspector({ units }: { units: UnitRow[] }) {
             </div>
           </li>
         ))}
-        {ranked.length === 0 && <p className="px-6 py-8 text-sm text-ink/50">No units yet. Ingest a session log.</p>}
+        {ranked.length === 0 && (
+          <li className="px-6 py-8 text-sm text-ink/50">No units yet. Ingest a session log.</li>
+        )}
       </ul>
     </section>
   );

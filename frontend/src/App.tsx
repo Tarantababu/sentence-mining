@@ -81,6 +81,10 @@ export default function App() {
     await startNewPack();
   }
 
+  const handleProgress = useCallback((completed: number, total: number) => {
+    setProgress((prev) => (prev.completed === completed && prev.total === total ? prev : { completed, total }));
+  }, []);
+
   const currentStep = finished
     ? progress.total
     : Math.min(progress.total, progress.completed + (pack ? 1 : 0));
@@ -163,7 +167,7 @@ export default function App() {
               <CardPlayer
                 key={`${pack.id}-${playerKey}`}
                 pack={pack}
-                onProgress={(completed, total) => setProgress({ completed, total })}
+                onProgress={handleProgress}
                 onFinished={(results) => {
                   setFinished(results);
                   setSession((value) => value + 1);

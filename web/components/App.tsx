@@ -26,7 +26,6 @@ export default function App() {
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [streak, setStreak] = useState(0);
   const [session, setSession] = useState(0);
-  const [openai, setOpenai] = useState(false);
   const [status, setStatus] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
   const [ingestOpen, setIngestOpen] = useState(false);
@@ -43,8 +42,7 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const health = await api.health();
-      setOpenai(health.openai_configured);
+      await api.health();
       let latest = await api.latestPack();
       if (!latest) latest = await api.generatePack();
       setPack(latest);
@@ -101,6 +99,10 @@ export default function App() {
       setBusyPack(false);
     }
   }
+
+  const handleProgress = useCallback((completed: number, total: number) => {
+    setProgress((prev) => (prev.completed === completed && prev.total === total ? prev : { completed, total }));
+  }, []);
 
   const currentStep = finished
     ? progress.total
@@ -172,7 +174,7 @@ export default function App() {
               <CardPlayer
                 key={`${pack.id}-${playerKey}`}
                 pack={pack}
-                onProgress={(completed, total) => setProgress({ completed, total })}
+                onProgress={handleProgress}
                 onFinished={(results) => {
                   setFinished(results);
                   setSession((value) => value + 1);
@@ -214,13 +216,7 @@ export default function App() {
           <LogHistory refreshToken={logTick} onPaste={() => setIngestOpen(true)} />
         )}
         {view === "memory" && !connecting && <UnitInspector units={units} />}
-        {view === "settings" && !connecting && (
-          <SettingsPanel
-            onSaved={(configured) => {
-              setOpenai(configured);
-            }}
-          />
-        )}
+        {view === "settings" && !connecting && <SettingsPanel />}
       </main>
 
       <IngestModal open={ingestOpen} onClose={() => setIngestOpen(false)} onIngested={(result) => void handleIngested(result)} />
