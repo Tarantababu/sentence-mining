@@ -19,8 +19,14 @@ const TABS: { id: View; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
+function dueCardsOf(pack: StudyPack | null) {
+  if (!pack) return [];
+  const due = pack.cards.filter((card) => (card.queue ?? "due") !== "stretch");
+  return due.length ? due : pack.cards;
+}
+
 export default function App() {
-  const [view, setView] = useState<View>("practice");
+  const [view, setView] = useState<View>("memory");
   const [pack, setPack] = useState<StudyPack | null>(null);
   const [units, setUnits] = useState<UnitRow[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
@@ -36,6 +42,8 @@ export default function App() {
   const [logTick, setLogTick] = useState(0);
   const [dueCount, setDueCount] = useState(0);
   const [clock, setClock] = useState<string | undefined>();
+  const [sessionMode, setSessionMode] = useState<"due" | "full">("due");
+  const [startIndex, setStartIndex] = useState(0);
 
   const refreshUnits = useCallback(async () => {
     const listed = await api.units();
@@ -75,6 +83,8 @@ export default function App() {
       setFinished(null);
       setProgress({ completed: 0, total: generated.cards.length });
       setPlayerKey((value) => value + 1);
+      setSessionMode("full");
+      setStartIndex(0);
       setView("practice");
       await refreshUnits();
     } catch (err) {
@@ -96,6 +106,7 @@ export default function App() {
       setFinished(null);
       setProgress({ completed: 0, total: generated.cards.length });
       setPlayerKey((value) => value + 1);
+      setSessionMode("due");
       await refreshUnits();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not rebuild the lesson");
@@ -108,11 +119,42 @@ export default function App() {
     setProgress((prev) => (prev.completed === completed && prev.total === total ? prev : { completed, total }));
   }, []);
 
-  const currentStep = finished
-    ? progress.total
-    : Math.min(progress.total, progress.completed + (pack ? 1 : 0));
-  const pct = progress.total === 0 ? 0 : Math.round((currentStep / progress.total) * 100);
+  async function startDueReviews(index = 0) {
+    setError(null);
+    setBusyPack(true);
+    try {
+      let next = pack;
+      const existingDue = dueCardsOf(pack);
+      if (!existingDue.length) {
+        next = await api.generatePack({ due_only: true, budget_cards: Math.min(8, Math.max(dueCount, 1)) });
+        setPack(next);
+      }
+      const cards = dueCardsOf(next);
+      setFinished(null);
+      setSessionMode("due");
+      setStartIndex(Math.min(Math.max(0, index), Math.max(cards.length - 1, 0)));
+      setProgress({ completed: 0, total: cards.length });
+      setPlayerKey((value) => value + 1);
+      setView("practice");
+      await refreshUnits();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start due reviews");
+    } finally {
+      setBusyPack(false);
+    }
+  }
+
   const connecting = status === "Connecting";
+  const dueCards = dueCardsOf(pack);
+  const practicePack =
+    pack && sessionMode === "due"
+      ? { ...pack, cards: dueCardsOf(pack) }
+      : pack;
+  const sessionTotal = (view === "practice" ? practicePack?.cards.length : pack?.cards.length) ?? progress.total;
+  const currentStep = finished
+    ? sessionTotal
+    : Math.min(sessionTotal, progress.completed + (practicePack ? 1 : 0));
+  const pct = sessionTotal === 0 ? 0 : Math.round((currentStep / sessionTotal) * 100);
 
   return (
     <div className="min-h-screen">
@@ -155,7 +197,7 @@ export default function App() {
             className={`rounded-full px-4 py-2 text-sm font-medium ${view === tab.id ? "bg-ink text-white" : "bg-white"}`}
             onClick={() => setView(tab.id)}
           >
-            {tab.label}
+            {tab.id === "memory" && dueCount > 0 ? `Review · ${dueCount}` : tab.label}
           </button>
         ))}
         <button className="rounded-full bg-white px-4 py-2 text-sm font-medium" onClick={() => setIngestOpen(true)}>
@@ -176,16 +218,19 @@ export default function App() {
 
         {view === "practice" && !connecting && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]">
-            {pack && !finished ? (
+            {practicePack && !finished ? (
               <CardPlayer
-                key={`${pack.id}-${playerKey}`}
-                pack={pack}
+                key={`${practicePack.id}-${playerKey}-${startIndex}`}
+                pack={practicePack}
+                startIndex={startIndex}
                 onProgress={handleProgress}
                 onFinished={(results) => {
                   setFinished(results);
                   setSession((value) => value + 1);
                   setStreak(markSessionComplete().count);
-                  void refreshUnits();
+                  void refreshUnits().then(() => {
+                    if (sessionMode === "due") setView("memory");
+                  });
                 }}
               />
             ) : (
@@ -225,7 +270,15 @@ export default function App() {
         {view === "logs" && !connecting && (
           <LogHistory refreshToken={logTick} onPaste={() => setIngestOpen(true)} />
         )}
-        {view === "memory" && !connecting && <UnitInspector units={units} now={clock} />}
+        {view === "memory" && !connecting && (
+          <UnitInspector
+            units={units}
+            dueCards={dueCards}
+            now={clock}
+            busy={busyPack}
+            onReviewDue={(index) => void startDueReviews(index)}
+          />
+        )}
         {view === "settings" && !connecting && <SettingsPanel />}
       </main>
 

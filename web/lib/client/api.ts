@@ -108,10 +108,14 @@ export const api = {
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<StudyPack>;
   },
-  generatePack: () =>
+  generatePack: (opts?: { budget_cards?: number; budget_prompts?: number; due_only?: boolean }) =>
     request<StudyPack>("/api/study-pack/generate", {
       method: "POST",
-      body: JSON.stringify({ budget_cards: 8, budget_prompts: 3 }),
+      body: JSON.stringify({
+        budget_cards: opts?.budget_cards ?? 8,
+        budget_prompts: opts?.budget_prompts ?? 3,
+        due_only: opts?.due_only === true,
+      }),
     }),
   submitReview: (card_id: number, result: ReviewResult) =>
     request<{ review_id: number; card_id: number; result: ReviewResult }>("/api/reviews/submit", {

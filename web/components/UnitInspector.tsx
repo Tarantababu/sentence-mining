@@ -1,11 +1,15 @@
 "use client";
 
-import { UnitRow } from "../lib/client/api";
+import { StudyCard, UnitRow } from "../lib/client/api";
+import { CARD_TYPE_LABEL } from "../lib/client/grade";
 import { formatLastSeen, formatNextReview, recallLabel, stabilityLabel } from "../lib/client/srs";
 
 type Props = {
   units: UnitRow[];
+  dueCards: StudyCard[];
   now?: string;
+  busy?: boolean;
+  onReviewDue: (startIndex?: number) => void;
 };
 
 function Chip({ children, tone }: { children: string; tone: "rose" | "amber" | "sky" }) {
@@ -56,7 +60,7 @@ function SkillCard({ unit, now, rank }: { unit: UnitRow; now: Date; rank?: numbe
   );
 }
 
-export default function UnitInspector({ units, now }: Props) {
+export default function UnitInspector({ units, dueCards, now, busy, onReviewDue }: Props) {
   const clock = now ? new Date(now) : new Date();
   const due = units.filter((unit) => unit.due);
   const rest = units.filter((unit) => !unit.due);
@@ -64,20 +68,54 @@ export default function UnitInspector({ units, now }: Props) {
   return (
     <div className="space-y-6">
       <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)] md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">Review</p>
-        <h2 className="mt-1 font-serif text-2xl font-semibold">What is due from every log</h2>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">Review first</p>
+        <h2 className="mt-1 font-serif text-2xl font-semibold">
+          {due.length ? `${due.length} due now` : "Nothing due"}
+        </h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink/55">
-          Recall fades as {due.length ? "these phrases" : "each phrase"} sit unused. Misses shorten memory;
-          a clean review or “used well!” lengthens it. Practice takes due items first, then a little stretch.
+          These are the phrases that need a pass before anything new. Review them first; stretch cards wait
+          until this queue is clear.
         </p>
-        <div className="mt-5 flex flex-wrap gap-2 text-sm">
-          <span className="rounded-full bg-leaf/80 px-3 py-1.5 font-semibold text-[#123016]">
-            {due.length} due now
-          </span>
-          <span className="rounded-full bg-sand px-3 py-1.5">{rest.length} coming up</span>
-          <span className="rounded-full bg-sand px-3 py-1.5">{units.length} in memory</span>
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-2xl bg-leaf px-5 py-3 text-sm font-bold text-[#123016] disabled:opacity-50"
+            onClick={() => onReviewDue(0)}
+            disabled={busy || due.length === 0}
+          >
+            {busy ? "Building…" : due.length ? "Review due first" : "Nothing due"}
+          </button>
+          <span className="rounded-full bg-sand px-3 py-1.5 text-sm">{rest.length} later</span>
         </div>
       </section>
+
+      {dueCards.length > 0 && (
+        <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_50px_rgba(18,32,28,0.08)] md:p-8">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">Due sentences</h3>
+          <p className="mt-1 text-sm text-ink/55">Open any item to start the queue at that sentence.</p>
+          <ol className="mt-5 space-y-2">
+            {dueCards.map((card, index) => (
+              <li key={card.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-start justify-between gap-3 rounded-2xl border border-ink/8 bg-sand/70 px-4 py-3 text-left transition hover:border-moss/40 hover:bg-white"
+                  onClick={() => onReviewDue(index)}
+                  disabled={busy}
+                >
+                  <span className="min-w-0">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/40">
+                      {index + 1}. {CARD_TYPE_LABEL[card.card_type] ?? "Sentence"}
+                    </span>
+                    <span className="mt-1 block font-medium leading-snug">{card.prompt}</span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-leaf px-3 py-1 text-xs font-semibold text-[#123016]">
+                    Review
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {due.length > 0 && (
         <section>
@@ -95,7 +133,7 @@ export default function UnitInspector({ units, now }: Props) {
       {rest.length > 0 && (
         <section>
           <h3 className="mb-3 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">
-            Stretch and later
+            After the due queue
           </h3>
           <ol className="grid gap-3 md:grid-cols-2">
             {rest.map((unit) => (

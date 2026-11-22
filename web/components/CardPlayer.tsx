@@ -6,6 +6,7 @@ import { autoGrade, CARD_TYPE_LABEL, GRADE_COPY } from "../lib/client/grade";
 
 type Props = {
   pack: StudyPack;
+  startIndex?: number;
   onProgress: (completed: number, total: number) => void;
   onFinished: (results: Record<ReviewResult, number>) => void;
 };
@@ -31,8 +32,8 @@ function PromptBody({ card }: { card: StudyCard }) {
 
 const GRADE_KEYS: Record<string, ReviewResult> = { "1": "knew_it", "2": "shaky", "3": "missed" };
 
-export default function CardPlayer({ pack, onProgress, onFinished }: Props) {
-  const [index, setIndex] = useState(0);
+export default function CardPlayer({ pack, startIndex = 0, onProgress, onFinished }: Props) {
+  const [index, setIndex] = useState(() => Math.min(Math.max(0, startIndex), Math.max(pack.cards.length - 1, 0)));
   const [guess, setGuess] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [grade, setGrade] = useState<ReviewResult | null>(null);

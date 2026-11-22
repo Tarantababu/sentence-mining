@@ -11,6 +11,7 @@ const bodySchema = z
   .object({
     budget_cards: z.number().int().min(1).max(12).optional(),
     budget_prompts: z.number().int().min(0).max(6).optional(),
+    due_only: z.boolean().optional(),
   })
   .optional();
 
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     viewer.ownerId,
     parsed.data?.budget_cards ?? 8,
     parsed.data?.budget_prompts ?? 3,
+    { dueOnly: parsed.data?.due_only === true },
   );
   return json(pack);
 }

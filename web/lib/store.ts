@@ -511,10 +511,18 @@ export async function generateStudyPack(
   ownerId: string,
   budgetCards = 8,
   budgetPrompts = 3,
+  opts: { dueOnly?: boolean } = {},
 ): Promise<StudyPackOut> {
   await ensureCatalog();
   const now = utcnow();
-  const ranked = await rankUnits(ownerId, now);
+  let ranked = await rankUnits(ownerId, now);
+  if (opts.dueOnly) {
+    const due = ranked.filter((unit) => unit.due);
+    if (due.length) {
+      ranked = due;
+      budgetCards = Math.min(budgetCards, due.length);
+    }
+  }
   const draft = await generatePack(ownerId, ranked, budgetCards, budgetPrompts);
   const inserted = await sql<{
     id: number;
