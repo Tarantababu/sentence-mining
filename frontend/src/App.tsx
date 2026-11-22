@@ -1,328 +1,181 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ReviewResult, StudyCard, StudyPack, UnitRow } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import { api, IngestResponse, ReviewResult, StudyPack, UnitRow } from "./api";
+import CardPlayer from "./components/CardPlayer";
+import IngestModal from "./components/IngestModal";
+import SpeakingPanel from "./components/SpeakingPanel";
+import UnitInspector from "./components/UnitInspector";
+import { markSessionComplete, readStreak } from "./lib/streak";
 
-type Tab = "practice" | "ingest" | "units";
-
-const SAMPLE = `You said: I attended to the meeting
-Correct: I attended the meeting
-Why: attend takes no preposition
-RECURRING
-
-VOCABULARY OF THE DAY
-- school run: daily kids-to-school trip (used well!)
-
-TRACKING LIST
-- attend + no preposition
-
-FOCUS FOR NEXT LESSON
-- verb-preposition collocations
-`;
-
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function Progress({ current, total }: { current: number; total: number }) {
-  const pct = total === 0 ? 0 : Math.round((current / total) * 100);
-  return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-ink/10">
-      <div className="h-full bg-leaf transition-all" style={{ width: `${pct}%` }} />
-    </div>
-  );
-}
-
-function CardPlayer({
-  pack,
-  onFinished,
-}: {
-  pack: StudyPack;
-  onFinished: () => void;
-}) {
-  const [index, setIndex] = useState(0);
-  const [guess, setGuess] = useState("");
-  const [revealed, setRevealed] = useState(false);
-  const [grade, setGrade] = useState<ReviewResult | null>(null);
-  const card: StudyCard | undefined = pack.cards[index];
-  const done = index >= pack.cards.length;
-
-  const submit = useCallback(
-    async (result: ReviewResult) => {
-      if (!card) return;
-      await api.submitReview(card.id, result);
-      setGrade(result);
-      setRevealed(true);
-    },
-    [card],
-  );
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && !revealed) {
-        event.preventDefault();
-        const match = card && normalize(guess) === normalize(card.answer);
-        void submit(match ? "knew_it" : guess.trim() ? "shaky" : "missed");
-      }
-      if (!revealed) return;
-      if (event.key === "1") void submit("knew_it");
-      if (event.key === "2") void submit("shaky");
-      if (event.key === "3") void submit("missed");
-      if (event.key === "Enter" && revealed) {
-        if (index + 1 >= pack.cards.length) onFinished();
-        else {
-          setIndex((value) => value + 1);
-          setGuess("");
-          setRevealed(false);
-          setGrade(null);
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [card, guess, index, onFinished, pack.cards.length, revealed, submit]);
-
-  if (done || !card) {
-    return (
-      <div className="rounded-2xl bg-white p-8 shadow-sm">
-        <h2 className="text-2xl font-semibold">Session complete</h2>
-        <p className="mt-2 text-ink/70">Streak +1. Review the speaking prompts, then generate a fresh pack anytime.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
-      <div className="mb-4 flex items-center justify-between text-sm text-ink/60">
-        <span className="uppercase tracking-wide">{card.card_type.replace(/_/g, " ")}</span>
-        <span>
-          {index + 1} / {pack.cards.length}
-        </span>
-      </div>
-      <Progress current={index} total={pack.cards.length} />
-      <p className="mt-8 text-2xl font-medium leading-snug">{card.prompt}</p>
-      <p className="mt-2 text-sm text-ink/50">{card.unit_keys.join(" · ")}</p>
-      <input
-        className="mt-6 w-full rounded-xl border border-ink/10 bg-sand px-4 py-3 outline-none focus:border-moss"
-        value={guess}
-        onChange={(event) => setGuess(event.target.value)}
-        placeholder="Type your answer"
-        disabled={revealed}
-        autoFocus
-      />
-      {revealed && (
-        <div className="mt-4 rounded-xl bg-sand p-4">
-          <p className="text-sm uppercase text-moss">{grade?.replace("_", " ")}</p>
-          <p className="mt-1 font-medium">{card.answer}</p>
-          <p className="mt-2 text-ink/70">
-            <span className="font-semibold">Why. </span>
-            {card.why}
-          </p>
-        </div>
-      )}
-      <div className="mt-6 flex flex-wrap gap-2">
-        {!revealed ? (
-          <button
-            className="rounded-full bg-moss px-5 py-2 text-white"
-            onClick={() => {
-              const match = normalize(guess) === normalize(card.answer);
-              void submit(match ? "knew_it" : guess.trim() ? "shaky" : "missed");
-            }}
-          >
-            Check
-          </button>
-        ) : (
-          <>
-            <button className="rounded-full bg-leaf px-4 py-2" onClick={() => void submit("knew_it")}>
-              1 Knew it
-            </button>
-            <button className="rounded-full bg-amber-300 px-4 py-2" onClick={() => void submit("shaky")}>
-              2 Shaky
-            </button>
-            <button className="rounded-full bg-rose-400 px-4 py-2 text-white" onClick={() => void submit("missed")}>
-              3 Missed
-            </button>
-            <button
-              className="rounded-full bg-ink px-4 py-2 text-white"
-              onClick={() => {
-                if (index + 1 >= pack.cards.length) onFinished();
-                else {
-                  setIndex((value) => value + 1);
-                  setGuess("");
-                  setRevealed(false);
-                  setGrade(null);
-                }
-              }}
-            >
-              Next
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+type View = "practice" | "memory";
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("practice");
+  const [view, setView] = useState<View>("practice");
   const [pack, setPack] = useState<StudyPack | null>(null);
   const [units, setUnits] = useState<UnitRow[]>([]);
-  const [log, setLog] = useState(SAMPLE);
-  const [status, setStatus] = useState("Loading…");
+  const [progress, setProgress] = useState({ completed: 0, total: 0 });
+  const [streak, setStreak] = useState(0);
+  const [session, setSession] = useState(0);
   const [openai, setOpenai] = useState(false);
+  const [status, setStatus] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
-  const [finished, setFinished] = useState(false);
+  const [ingestOpen, setIngestOpen] = useState(false);
+  const [finished, setFinished] = useState<Record<ReviewResult, number> | null>(null);
+  const [playerKey, setPlayerKey] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const refreshUnits = useCallback(async () => {
+    const listed = await api.units();
+    setUnits(listed.units);
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const health = await api.health();
       setOpenai(health.openai_configured);
-      try {
-        setPack(await api.latestPack());
-      } catch {
-        setPack(null);
+      let latest = await api.latestPack();
+      if (!latest) {
+        latest = await api.generatePack();
       }
-      const listed = await api.units();
-      setUnits(listed.units);
+      setPack(latest);
+      setProgress({ completed: 0, total: latest.cards.length });
+      await refreshUnits();
+      setStreak(readStreak().count);
       setStatus("Ready");
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Backend unreachable");
       setStatus("Offline");
     }
-  }, []);
+  }, [refreshUnits]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function ingest(event: FormEvent) {
-    event.preventDefault();
+  async function startNewPack() {
     setError(null);
-    await api.ingest(log);
     const generated = await api.generatePack();
     setPack(generated);
-    setFinished(false);
-    setTab("practice");
-    await load();
+    setFinished(null);
+    setProgress({ completed: 0, total: generated.cards.length });
+    setPlayerKey((value) => value + 1);
+    setView("practice");
+    await refreshUnits();
   }
 
-  const streak = useMemo(
-    () => units.reduce((sum, unit) => sum + unit.success_count, 0),
-    [units],
-  );
+  async function handleIngested(result: IngestResponse) {
+    setNotice(`${result.error_count} errors · ${result.units_touched.length} units · parser ${result.parser}`);
+    setIngestOpen(false);
+    await startNewPack();
+  }
+
+  const currentStep = finished
+    ? progress.total
+    : Math.min(progress.total, progress.completed + (pack ? 1 : 0));
+  const pct = progress.total === 0 ? 0 : Math.round((currentStep / progress.total) * 100);
 
   return (
-    <div className="mx-auto min-h-screen max-w-5xl px-4 py-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-moss">Sentence Mining</p>
-          <h1 className="text-3xl font-semibold">Practice the gaps</h1>
+    <div className="min-h-screen">
+      <div className="border-b border-ink/10 bg-white/90">
+        <div className="mx-auto max-w-5xl px-4 py-2.5">
+          <div className="h-3 overflow-hidden rounded-full bg-[#ddd6c8]">
+            <div
+              className="h-full rounded-full bg-leaf transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="rounded-full bg-white px-3 py-1 shadow-sm">Streak {streak}</span>
-          <span className="rounded-full bg-white px-3 py-1 shadow-sm">
-            {openai ? "OpenAI on" : "Templates"}
+      </div>
+
+      <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-moss">Sentence Mining</p>
+          <h1 className="font-serif text-3xl font-semibold tracking-tight">Practice the gaps</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">Streak {streak}</span>
+          <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+            Session {session + (finished ? 1 : 0)}
           </span>
-          <span className="text-ink/50">{status}</span>
+          <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+            {currentStep}/{progress.total || 0}
+          </span>
+          <span className="rounded-full bg-white px-3 py-1.5 text-ink/50 shadow-sm">
+            {openai ? "OpenAI" : "Templates"} · {status}
+          </span>
         </div>
       </header>
 
-      <nav className="mb-6 flex gap-2">
-        {(["practice", "ingest", "units"] as Tab[]).map((item) => (
-          <button
-            key={item}
-            className={`rounded-full px-4 py-2 text-sm ${tab === item ? "bg-ink text-white" : "bg-white"}`}
-            onClick={() => setTab(item)}
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
+      <div className="mx-auto flex max-w-5xl gap-2 px-4">
+        <button
+          className={`rounded-full px-4 py-2 text-sm font-medium ${view === "practice" ? "bg-ink text-white" : "bg-white"}`}
+          onClick={() => setView("practice")}
+        >
+          Practice
+        </button>
+        <button
+          className={`rounded-full px-4 py-2 text-sm font-medium ${view === "memory" ? "bg-ink text-white" : "bg-white"}`}
+          onClick={() => setView("memory")}
+        >
+          Memory
+        </button>
+        <button className="rounded-full bg-white px-4 py-2 text-sm font-medium" onClick={() => setIngestOpen(true)}>
+          Paste log
+        </button>
+      </div>
 
-      {error && <p className="mb-4 rounded-xl bg-rose-100 px-4 py-3 text-sm">{error}</p>}
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        {error && <p className="mb-4 rounded-2xl bg-rose-100 px-4 py-3 text-sm">{error}</p>}
+        {notice && <p className="mb-4 rounded-2xl bg-moss/10 px-4 py-3 text-sm text-moss">{notice}</p>}
 
-      {tab === "practice" && (
-        <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
-          {pack && !finished ? (
-            <CardPlayer pack={pack} onFinished={() => setFinished(true)} />
-          ) : (
-            <div className="rounded-2xl bg-white p-8 shadow-sm">
-              <h2 className="text-xl font-semibold">{pack ? "Ready for another round?" : "No study pack yet"}</h2>
-              <p className="mt-2 text-ink/70">Generate cards from current unit memories, or ingest a session log first.</p>
-              <button
-                className="mt-6 rounded-full bg-moss px-5 py-2 text-white"
-                onClick={async () => {
-                  const generated = await api.generatePack();
-                  setPack(generated);
-                  setFinished(false);
+        {view === "practice" && (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]">
+            {pack && !finished ? (
+              <CardPlayer
+                key={`${pack.id}-${playerKey}`}
+                pack={pack}
+                onProgress={(completed, total) => setProgress({ completed, total })}
+                onFinished={(results) => {
+                  setFinished(results);
+                  setSession((value) => value + 1);
+                  setStreak(markSessionComplete().count);
+                  void refreshUnits();
                 }}
-              >
-                Generate study pack
-              </button>
-            </div>
-          )}
-          <aside className="rounded-2xl bg-white p-6 shadow-sm">
-            <h3 className="font-semibold">Next-session speaking</h3>
-            <ol className="mt-4 space-y-4">
-              {(pack?.speaking_prompts || []).map((item) => (
-                <li key={item.prompt} className="text-sm leading-relaxed">
-                  <p>{item.prompt}</p>
-                  <p className="mt-1 text-xs text-ink/50">{item.unit_keys.join(" · ")}</p>
-                </li>
-              ))}
-              {!pack?.speaking_prompts?.length && <p className="text-sm text-ink/50">Prompts appear after generate.</p>}
-            </ol>
-          </aside>
-        </div>
-      )}
+              />
+            ) : (
+              <section className="rounded-3xl bg-white p-8 shadow-[0_12px_40px_rgba(18,32,28,0.06)]">
+                <h2 className="font-serif text-2xl font-semibold">
+                  {finished ? "Session complete" : "No study pack yet"}
+                </h2>
+                {finished ? (
+                  <p className="mt-3 text-ink/70">
+                    {finished.knew_it} knew it · {finished.shaky} shaky · {finished.missed} missed. Speaking prompts are on
+                    the right — use them in the next lesson.
+                  </p>
+                ) : (
+                  <p className="mt-3 text-ink/70">Generate cards from current memories, or paste a session log.</p>
+                )}
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <button className="rounded-2xl bg-moss px-5 py-3 text-sm font-semibold text-white" onClick={() => void startNewPack()}>
+                    Generate study pack
+                  </button>
+                  <button className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold" onClick={() => setIngestOpen(true)}>
+                    Paste session log
+                  </button>
+                  <button className="rounded-2xl bg-sand px-5 py-3 text-sm font-semibold" onClick={() => setView("memory")}>
+                    Inspect units
+                  </button>
+                </div>
+              </section>
+            )}
+            <SpeakingPanel prompts={pack?.speaking_prompts || []} />
+          </div>
+        )}
 
-      {tab === "ingest" && (
-        <form onSubmit={ingest} className="rounded-2xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Paste a session log</h2>
-          <p className="mt-1 text-sm text-ink/60">You said / Correct / Why, VOCABULARY OF THE DAY, TRACKING LIST, FOCUS FOR NEXT LESSON.</p>
-          <textarea
-            className="mt-4 h-80 w-full rounded-xl border border-ink/10 bg-sand p-4 font-mono text-sm"
-            value={log}
-            onChange={(event) => setLog(event.target.value)}
-          />
-          <button className="mt-4 rounded-full bg-moss px-5 py-2 text-white" type="submit">
-            Ingest and generate
-          </button>
-        </form>
-      )}
+        {view === "memory" && <UnitInspector units={units} />}
+      </main>
 
-      {tab === "units" && (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-sand text-ink/60">
-              <tr>
-                <th className="px-4 py-3">Unit</th>
-                <th>S_k</th>
-                <th>p_k</th>
-                <th>Urgency</th>
-                <th>Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((unit) => (
-                <tr key={unit.key} className="border-t border-ink/5">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{unit.label}</div>
-                    <div className="text-xs text-ink/50">{unit.key}</div>
-                  </td>
-                  <td>{unit.stability_days.toFixed(2)}</td>
-                  <td>{unit.p_k.toFixed(2)}</td>
-                  <td>{unit.urgency.toFixed(2)}</td>
-                  <td className="space-x-1 py-3 text-xs">
-                    {unit.is_recurring && <span className="rounded-full bg-rose-100 px-2 py-0.5">recurring</span>}
-                    {unit.is_focus && <span className="rounded-full bg-amber-100 px-2 py-0.5">focus</span>}
-                    {unit.is_tracking && <span className="rounded-full bg-sky-100 px-2 py-0.5">tracking</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <IngestModal open={ingestOpen} onClose={() => setIngestOpen(false)} onIngested={(result) => void handleIngested(result)} />
     </div>
   );
 }
