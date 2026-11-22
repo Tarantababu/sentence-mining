@@ -92,7 +92,7 @@ function CardPlayer({
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
       <div className="mb-4 flex items-center justify-between text-sm text-ink/60">
-        <span className="uppercase tracking-wide">{card.card_type.replaceAll("_", " ")}</span>
+        <span className="uppercase tracking-wide">{card.card_type.replace(/_/g, " ")}</span>
         <span>
           {index + 1} / {pack.cards.length}
         </span>
