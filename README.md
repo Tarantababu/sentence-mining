@@ -32,7 +32,9 @@ npm install
 npm run dev
 ```
 
-UI: http://localhost:5173 (Vite proxies `/api` to the backend).
+UI: http://localhost:5173 — Vite proxies `/api` to the backend. With `SEED_SAMPLE_DATA=true` the practice player loads a seeded study pack so it is never empty.
+
+Keyboard in the player: Enter checks / continues; `1` knew it, `2` shaky, `3` missed.
 
 ## Tests
 
