@@ -34,13 +34,19 @@ def _allow_openai_call() -> bool:
     return True
 
 
-def complete_json(system: str, user: str, model_type: type[T]) -> T | None:
+def complete_json(
+    system: str,
+    user: str,
+    model_type: type[T],
+    *,
+    timeout_seconds: float | None = None,
+) -> T | None:
     settings = get_settings()
     if not settings.openai_configured:
         return None
     if not _allow_openai_call():
         return None
-    timeout = settings.openai_timeout_seconds
+    timeout = timeout_seconds if timeout_seconds is not None else settings.openai_timeout_seconds
     payload: dict[str, Any] = {
         "model": settings.openai_model,
         "temperature": 0.3,

@@ -370,12 +370,30 @@ async function rankUnits(ownerId: string, now: Date): Promise<RankedUnit[]> {
     ownerId,
   ]);
   const byUnit = new Map(memories.map((row) => [row.unit_id, row]));
+  const errorRows = await sql<{
+    unit_id: number;
+    raw_utterance: string;
+    corrected_utterance: string;
+    explanation: string;
+  }>(
+    `select e.unit_id, e.raw_utterance, e.corrected_utterance, e.explanation
+     from session_errors e
+     join sessions s on s.id = e.session_id
+     where s.owner_id = $1
+     order by e.id desc`,
+    [ownerId],
+  );
+  const latestError = new Map<number, (typeof errorRows)[number]>();
+  for (const row of errorRows) {
+    if (!latestError.has(row.unit_id)) latestError.set(row.unit_id, row);
+  }
   const ranked: RankedUnit[] = [];
   for (const unit of units) {
     const snap = snapshotFromRow(byUnit.get(unit.id));
     if (!isTracked(snap)) continue;
     const [pK] = snapshotP(snap, now);
     const queue = queueRole(snap, pK, now);
+    const source = latestError.get(unit.id);
     ranked.push({
       key: unit.key,
       label: unit.label,
@@ -397,6 +415,9 @@ async function rankUnits(ownerId: string, now: Date): Promise<RankedUnit[]> {
       next_review_at: nextReviewAt(snap.stability_days, snap.last_seen_at, now),
       due: queue === "due",
       queue,
+      you_said: source?.raw_utterance,
+      correct: source?.corrected_utterance,
+      why: source?.explanation,
     });
   }
   ranked.sort((a, b) => {

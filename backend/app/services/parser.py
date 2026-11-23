@@ -335,4 +335,6 @@ def merge_parsed_sessions(base: ParsedSession, extra: ParsedSession) -> ParsedSe
 
 
 def needs_enrichment(parsed: ParsedSession, raw_log: str) -> bool:
-    return len(raw_log.strip()) >= 40
+    if len(parsed.errors) >= 2 or parsed.vocab:
+        return False
+    return len(raw_log.strip()) >= 80

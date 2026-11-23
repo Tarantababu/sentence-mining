@@ -241,3 +241,30 @@ def test_generate_pack_falls_back_on_unknown_unit_keys(monkeypatch: pytest.Monke
     ranked = [_unit("do_the_school_run", 2.0)]
     pack = generate_pack(ranked, budget_cards=1, budget_prompts=1)
     assert pack.generator == "fallback"
+
+
+def test_generate_pack_keeps_valid_llm_cards_and_pads(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = GeneratedPack.model_validate(
+        {
+            "cards": [
+                {
+                    "card_type": "fix_error",
+                    "prompt": "Fix: I attended to the meeting.",
+                    "answer": "I attended the meeting.",
+                    "why": "No preposition.",
+                    "unit_keys": ["attend_no_prep"],
+                }
+            ],
+            "speaking_prompts": [],
+        }
+    )
+    monkeypatch.setattr("app.services.material_generator.complete_json", lambda *a, **k: payload)
+    ranked = [_unit("attend_no_prep", 2.0), _unit("do_the_school_run", 1.8)]
+    pack = generate_pack(ranked, budget_cards=2, budget_prompts=1)
+    assert pack.generator == "openai"
+    assert pack.cards[0].answer == "I attended the meeting."
+    assert len(pack.cards) == 2
+    assert {key for card in pack.cards for key in card.unit_keys} >= {
+        "attend_no_prep",
+        "do_the_school_run",
+    }

@@ -6,7 +6,7 @@ from app.services.memory_engine import (
     select_card_groups,
     select_due_then_stretch,
 )
-from app.services.material_generator import fallback_pack
+from app.services.material_generator import blank_from_pair, fallback_pack
 
 
 def _unit(key: str, urgency: float, tags: list[str], recurring: bool = False) -> RankedUnit:
@@ -77,6 +77,41 @@ def test_due_items_selected_before_stretch() -> None:
     assert groups[0][0].key in {"attend_no_prep", "do_the_school_run"}
     assert groups[1][0].key in {"attend_no_prep", "do_the_school_run"}
     assert groups[2][0].key == "by_hand"
+
+
+def test_blank_from_pair_targets_the_correction() -> None:
+    prompt, answer = blank_from_pair("It's great game.", "It's a great game.")
+    assert "_____" in prompt
+    assert answer.lower() == "a"
+    prompt, answer = blank_from_pair("My weekend was wrong.", "My weekend was relaxed.")
+    assert "_____" in prompt
+    assert "relaxed" in answer.lower()
+    assert "before dinner" not in prompt.lower()
+    prompt, answer = blank_from_pair("I attended to the meeting.", "I attended the meeting.")
+    assert "_____" in prompt
+    assert "attended" in answer.lower()
+    assert "to" not in prompt.lower()
+    prompt, answer = blank_from_pair(
+        "It's a quite important process.",
+        "It's quite an important process, so there's zero margin for error.",
+    )
+    assert "_____" in prompt
+    assert len(answer.split()) <= 3
+
+
+def test_fallback_uses_learner_correction() -> None:
+    unit = _unit("misc_weekend", 2.0, ["misc"])
+    unit.you_said = "My weekend was wrong."
+    unit.correct = "My weekend was relaxed."
+    unit.why = "wrong doesn't describe a weekend"
+    unit.queue = "due"
+    unit.due = True
+    pack = fallback_pack([unit], budget_cards=1, budget_prompts=1)
+    card = pack.cards[0]
+    blob = f"{card.prompt} {card.answer} {card.why}".lower()
+    assert "before dinner" not in blob
+    assert "weekend" in blob
+    assert 1 <= len(card.unit_keys) <= 2
 
 
 def test_fallback_pack_respects_budget() -> None:

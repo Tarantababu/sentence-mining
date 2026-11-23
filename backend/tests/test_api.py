@@ -21,9 +21,10 @@ def test_ingest_generate_units_and_review_roundtrip(client: TestClient) -> None:
     assert "attend_no_prep" in payload["units_touched"]
     assert any(item["is_recurring"] for item in payload["errors"])
 
-    missing = client.get("/api/study-pack/latest")
-    assert missing.status_code == 404
-
+    generated = client.get("/api/study-pack/latest")
+    assert generated.status_code == 200, generated.text
+    pack = generated.json()
+    assert pack["cards"]
     generated = client.post(
         "/api/study-pack/generate",
         json={"budget_cards": 8, "budget_prompts": 3},
@@ -111,3 +112,34 @@ FOCUS FOR NEXT LESSON
     assert settings.json()["api_key_set"] is False
     assert listed["stats"]["total_items"] >= 8
     assert listed["stats"]["daily_limit"] is None
+
+
+def test_ingest_builds_practice_from_you_said(client: TestClient) -> None:
+    log = """
+1. You said: "My weekend was wrong."
+Correct: "My weekend was relaxed."
+Why: wrong doesn't describe a weekend
+
+2. You said: "I attended to the meeting."
+Correct: "I attended the meeting."
+Why: attend takes no preposition. RECURRING
+"""
+    ingest = client.post("/api/sessions/ingest", json={"raw_log": log})
+    assert ingest.status_code == 200, ingest.text
+    assert ingest.json()["error_count"] == 2
+    pack = client.get("/api/study-pack/latest")
+    assert pack.status_code == 200, pack.text
+    cards = pack.json()["cards"]
+    assert cards
+    blob = " ".join(f"{card['prompt']} {card['answer']} {card['why']}" for card in cards).lower()
+    assert "before dinner" not in blob
+    assert "weekend" in blob or "attended" in blob
+    assert any(
+        "_____" in card["prompt"]
+        or card["prompt"].lower().startswith("fix:")
+        or "rewrite" in card["prompt"].lower()
+        for card in cards
+    )
+    for card in cards:
+        assert 1 <= len(card["unit_keys"]) <= 2
+        assert card["card_type"] in {"fill_in_blank", "fix_error", "transform_sentence"}

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -12,6 +14,9 @@ from app.schemas.sessions import (
     SessionLogOut,
 )
 from app.services.ingest import ingest_session
+from app.services.study import generate_study_pack
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["sessions"])
 
@@ -19,6 +24,10 @@ router = APIRouter(tags=["sessions"])
 @router.post("/api/sessions/ingest", response_model=IngestResponse)
 def ingest(payload: IngestRequest, db: Session = Depends(get_db)) -> IngestResponse:
     session, parsed = ingest_session(db, payload.raw_log, source="paste")
+    try:
+        generate_study_pack(db, budget_cards=8, budget_prompts=3, due_only=True)
+    except Exception:
+        logger.exception("study pack generation after ingest failed")
     return IngestResponse(
         session_id=session.id,
         error_count=len(parsed.errors),

@@ -217,6 +217,9 @@ class RankedUnit:
     next_review_at: datetime | None = None
     due: bool = False
     queue: str = "due"
+    you_said: str = ""
+    correct: str = ""
+    why: str = ""
 
 
 def select_card_groups(

@@ -55,6 +55,9 @@ export type RankedUnit = {
   next_review_at: Date;
   due: boolean;
   queue: QueueRole;
+  you_said?: string;
+  correct?: string;
+  why?: string;
 };
 
 export function utcnow(): Date {

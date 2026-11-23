@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 
 from app.schemas.openai_payloads import GeneratedPack
 from app.services.memory_engine import RankedUnit, rotate_card_types, select_due_then_stretch
 from app.services.openai_client import complete_json
 from app.services.unit_catalog import CATALOG_BY_KEY
+
+LLM_CARD_CAP = 8
 
 
 @dataclass
@@ -33,23 +37,61 @@ class DraftPack:
     generator: str
 
 
+def blank_from_pair(raw: str, correct: str) -> tuple[str, str]:
+    original = [part for part in re.sub(r"\s+", " ", raw).strip().split(" ") if part]
+    target = [part for part in re.sub(r"\s+", " ", correct).strip().split(" ") if part]
+    if not target:
+        return (f"{correct} _____".strip(), correct)
+
+    def same(left: str, right: str) -> bool:
+        return re.sub(r"[^\w']+", "", left).lower() == re.sub(r"[^\w']+", "", right).lower()
+
+    start = 0
+    while start < len(original) and start < len(target) and same(original[start], target[start]):
+        start += 1
+    orig_end = len(original)
+    tgt_end = len(target)
+    while orig_end > start and tgt_end > start and same(original[orig_end - 1], target[tgt_end - 1]):
+        orig_end -= 1
+        tgt_end -= 1
+    if tgt_end <= start:
+        start = start - 1 if start > 0 else 0
+        tgt_end = min(len(target), start + 1)
+    if start == 0 and tgt_end == len(target) and len(target) >= 4:
+        start = max(1, len(target) // 3)
+        tgt_end = min(len(target) - 1, start + 2)
+    if tgt_end - start > 3:
+        tgt_end = start + 2
+    answer = " ".join(target[start:tgt_end]).strip() or target[-1]
+    before = " ".join(target[:start])
+    after = " ".join(target[tgt_end:])
+    prompt = f"{before} _____ {after}".replace("  ", " ").strip()
+    return prompt, answer
+
+
 def _template_for(unit: RankedUnit, card_type: str) -> tuple[str, str, str]:
+    raw = (unit.you_said or "").strip()
+    correct = (unit.correct or unit.label).strip()
+    why = (unit.why or "").strip() or f"Keep this natural: {correct}"
+    if raw and correct:
+        if card_type == "fill_in_blank":
+            prompt, answer = blank_from_pair(raw, correct)
+            return prompt, answer, why
+        if card_type == "fix_error":
+            return f"Fix: {raw}", correct, why
+        return f"Rewrite naturally: {raw}", correct, why
     defn = CATALOG_BY_KEY.get(unit.key)
     if defn and card_type in defn.templates:
         return defn.templates[card_type]
-    label = unit.label
     if card_type == "fill_in_blank":
-        return (f"I need to _____ before dinner.", label, f"Use the natural phrase: {label}.")
+        prompt, answer = blank_from_pair(unit.label, unit.label)
+        return prompt, answer, f"Use the natural phrase: {unit.label}."
     if card_type == "fix_error":
-        return (
-            f"Fix: I did {label} wrong in that sentence.",
-            f"I used {label} correctly.",
-            f"Keep {label} as a set phrase.",
-        )
+        return f"Fix: {unit.label}", unit.label, f"Keep {unit.label} as a set phrase."
     return (
-        f"Rewrite: I will mention {label} in a short everyday sentence.",
-        f"I'll use {label} in a short everyday sentence.",
-        f"Keep the surrounding English simple; target {label}.",
+        f"Rewrite naturally: {unit.label}",
+        unit.label,
+        f"Keep the surrounding English simple; target {unit.label}.",
     )
 
 
@@ -91,14 +133,12 @@ def fallback_pack(
 
     prompts: list[DraftPrompt] = []
     for unit in ranked[:budget_prompts]:
+        target = unit.correct or unit.label
         prompts.append(
             DraftPrompt(
-                prompt=(
-                    f"Tell a 20-second story that naturally uses "
-                    f"“{unit.label}”. Keep everything else easy."
-                ),
+                prompt=f"Tell a 20-second story that naturally uses “{target}”. Keep everything else easy.",
                 unit_keys=[unit.key],
-                why="This phrase needs a spoken pass in a real conversation.",
+                why=unit.why or "This phrase needs a spoken pass in a real conversation.",
             )
         )
     if budget_prompts > len(prompts) and len(ranked) >= 2:
@@ -107,7 +147,7 @@ def fallback_pack(
             DraftPrompt(
                 prompt=(
                     f"Compare two recent situations using "
-                    f"“{pair[0].label}” and “{pair[1].label}”."
+                    f"“{pair[0].correct or pair[0].label}” and “{pair[1].correct or pair[1].label}”."
                 ),
                 unit_keys=[unit.key for unit in pair],
                 why=_merge_why(pair),
@@ -116,23 +156,33 @@ def fallback_pack(
     return DraftPack(cards=cards, speaking_prompts=prompts[:budget_prompts], generator="fallback")
 
 
-def _validate_llm_pack(
+def _merge_llm_pack(
+    skeleton: DraftPack,
     payload: GeneratedPack,
     allowed_keys: set[str],
+    skill_lookup: dict[str, list[str]],
     budget_cards: int,
     budget_prompts: int,
-    skill_lookup: dict[str, list[str]],
-) -> DraftPack | None:
+) -> DraftPack:
+    used: set[str] = set()
     cards: list[DraftCard] = []
-    for card in payload.cards[:budget_cards]:
+    kept_llm = False
+    queue_by_key = {card.unit_keys[0]: card.queue for card in skeleton.cards if card.unit_keys}
+    for card in payload.cards:
+        if len(cards) >= budget_cards:
+            break
         keys = [key for key in card.unit_keys if key in allowed_keys][:2]
         if not keys:
-            return None
+            continue
+        kept_llm = True
         tags: list[str] = []
         for key in keys:
             for tag in skill_lookup.get(key, []):
                 if tag not in tags:
                     tags.append(tag)
+        queue = "due" if any(queue_by_key.get(key) == "due" for key in keys) else (
+            skeleton.cards[len(cards)].queue if len(cards) < len(skeleton.cards) else "due"
+        )
         cards.append(
             DraftCard(
                 card_type=card.card_type,
@@ -141,20 +191,30 @@ def _validate_llm_pack(
                 why=card.why.strip(),
                 unit_keys=keys,
                 skill_tags=tags,
-                queue="due",
+                queue=queue,
             )
         )
-    if len(cards) != min(budget_cards, len(payload.cards)) or not cards:
-        return None
+        used.update(keys)
+    for card in skeleton.cards:
+        if len(cards) >= budget_cards:
+            break
+        if all(key in used for key in card.unit_keys):
+            continue
+        cards.append(card)
+        used.update(card.unit_keys)
     prompts: list[DraftPrompt] = []
     for item in payload.speaking_prompts[:budget_prompts]:
-        keys = [key for key in item.unit_keys if key in allowed_keys]
+        keys = [key for key in item.unit_keys if key in allowed_keys][:2]
         if not keys:
             continue
-        prompts.append(
-            DraftPrompt(prompt=item.prompt.strip(), unit_keys=keys, why=item.why.strip())
-        )
-    return DraftPack(cards=cards, speaking_prompts=prompts, generator="openai")
+        prompts.append(DraftPrompt(prompt=item.prompt.strip(), unit_keys=keys, why=item.why.strip()))
+    if len(prompts) < min(budget_prompts, 1):
+        prompts = skeleton.speaking_prompts
+    return DraftPack(
+        cards=cards,
+        speaking_prompts=prompts[:budget_prompts],
+        generator="openai" if kept_llm else "fallback",
+    )
 
 
 def generate_pack(
@@ -168,17 +228,24 @@ def generate_pack(
 
     allowed = {unit.key for unit in ranked}
     skill_lookup = {unit.key: unit.skill_tags for unit in ranked}
+    llm_budget = min(LLM_CARD_CAP, budget_cards, len(skeleton.cards))
     user = {
         "units": [
             {
+                "key": unit.key,
                 "label": unit.label,
                 "kind": unit.kind,
+                "you_said": unit.you_said,
+                "correct": unit.correct or unit.label,
+                "why": unit.why,
                 "urgency": round(unit.urgency, 4),
                 "p_k": round(unit.p_k, 4),
                 "queue": unit.queue,
                 "due": unit.due,
+                "recurring": unit.is_recurring,
+                "focus": unit.is_focus,
             }
-            for unit in ranked[:20]
+            for unit in ranked[:16]
         ],
         "skeleton_cards": [
             {
@@ -189,35 +256,29 @@ def generate_pack(
                 "why": card.why,
                 "queue": card.queue,
             }
-            for card in skeleton.cards
+            for card in skeleton.cards[:llm_budget]
         ],
-        "budget_cards": budget_cards,
+        "budget_cards": llm_budget,
         "budget_prompts": budget_prompts,
         "constraints": [
-            "Each card is a full natural English sentence: fill-in-the-blank, a sentence to fix, or a sentence to rewrite.",
-            "prompt, answer, and why must be human language only — never unit slugs such as attend_no_prep.",
-            "Keep unit_keys in the JSON field only, never inside the sentence.",
-            "Keep skeleton order: due reviews first, then i+1 stretch. One or two targets per card.",
-            "Surrounding English must be adult i+1 (easy except the target).",
-            "Preserve card_type and the intended answer meaning.",
+            "i+1: each card targets 1–2 weak units; surrounding English stays easy and adult.",
+            "fill_in_blank: one natural sentence with _____ only on the target.",
+            "fix_error: show the learner's You said line; answer is the Correct sentence.",
+            "transform_sentence: ask for a rewrite; answer is the Correct sentence.",
+            "Use you_said / correct / why from the units. Do not invent a different grammar point.",
+            "prompt, answer, and why are human language only — never unit slugs.",
+            "Keep unit_keys in JSON only. Keep card_type. Keep due cards first.",
         ],
     }
     system = (
-        "You write short i+1 English sentence cards for an adult learner. "
-        "Each prompt is a natural sentence, never a debug label. "
+        "You write i+1 English practice cards for an adult learner from their own speaking errors. "
+        "Prefer the learner's Correct sentence. Blank or repair only the weak point. "
         "Never put unit slugs in prompt, answer, or why. "
-        "Return only JSON matching the schema {cards:[{card_type,prompt,answer,why,unit_keys}],"
+        "Return JSON {cards:[{card_type,prompt,answer,why,unit_keys}],"
         "speaking_prompts:[{prompt,unit_keys,why}]}."
     )
-    llm = complete_json(system, str(user), GeneratedPack)
+    llm = complete_json(system, json.dumps(user), GeneratedPack, timeout_seconds=20.0)
     if llm is None:
         return skeleton
-    validated = _validate_llm_pack(llm, allowed, budget_cards, budget_prompts, skill_lookup)
-    if validated is None or len(validated.cards) < len(skeleton.cards):
-        return skeleton
-    for index, card in enumerate(validated.cards):
-        card.queue = skeleton.cards[index].queue if index < len(skeleton.cards) else card.queue
-    if len(validated.speaking_prompts) < min(budget_prompts, 1) and budget_prompts:
-        validated.speaking_prompts = skeleton.speaking_prompts
-        validated.generator = "openai"
-    return validated
+    merged = _merge_llm_pack(skeleton, llm, allowed, skill_lookup, budget_cards, budget_prompts)
+    return merged if merged.cards else skeleton

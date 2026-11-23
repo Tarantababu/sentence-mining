@@ -78,14 +78,14 @@ export async function completeJson<S extends z.ZodTypeAny>(
   system: string,
   user: string,
   schema: S,
+  opts?: { timeoutMs?: number },
 ): Promise<z.output<S> | null> {
   const apiKey = await resolveOpenAiKey(ownerId);
   if (!apiKey) return null;
   if ((await openaiCallsInWindow(ownerId, 3600)) >= OPENAI_MAX_PER_HOUR) return null;
-  await recordOpenAiCall(ownerId);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs());
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? timeoutMs());
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -105,6 +105,7 @@ export async function completeJson<S extends z.ZodTypeAny>(
       }),
     });
     if (!response.ok) return null;
+    await recordOpenAiCall(ownerId);
     const body = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };

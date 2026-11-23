@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   if (!parsedBody.success) return errorJson("invalid log", 400);
   const { sessionId, parsed } = await ingestSession(viewer.ownerId, parsedBody.data.raw_log, "paste");
   try {
-    await generateStudyPack(viewer.ownerId);
+    await generateStudyPack(viewer.ownerId, 8, 3, { dueOnly: true });
   } catch {
     /* pack is rebuilt on the next practice start if this fails */
   }

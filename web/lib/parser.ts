@@ -321,5 +321,6 @@ export function mergeParsedSessions(base: ParsedSession, extra: ParsedSession): 
 }
 
 export function needsEnrichment(parsed: ParsedSession, rawLog: string): boolean {
-  return rawLog.trim().length >= 40;
+  if (parsed.errors.length >= 2 || parsed.vocab.length) return false;
+  return rawLog.trim().length >= 80;
 }

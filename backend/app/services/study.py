@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import AppSetting, Review, StudyCard, StudyPack, Unit, UnitMemory
+from app.models import AppSetting, Review, SessionError, StudyCard, StudyPack, Unit, UnitMemory
 from app.schemas.reviews import ReviewResult
 from app.schemas.study import (
     SpeakingPromptOut,
@@ -22,6 +22,12 @@ from app.services.memory_engine import RankedUnit
 
 def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
     rows = db.execute(select(Unit, UnitMemory).join(UnitMemory, isouter=True)).all()
+    error_rows = db.scalars(select(SessionError).order_by(SessionError.id.desc())).all()
+    latest_error: dict[int, SessionError] = {}
+    for row in error_rows:
+        if row.unit_id is None or row.unit_id in latest_error:
+            continue
+        latest_error[row.unit_id] = row
     ranked: list[RankedUnit] = []
     for unit, memory in rows:
         snap = _snapshot(memory)
@@ -35,6 +41,7 @@ def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
             continue
         p_k, _ = mem.snapshot_p(snap, now)
         queue = mem.queue_role(snap, p_k, now)
+        source = latest_error.get(unit.id)
         ranked.append(
             RankedUnit(
                 key=unit.key,
@@ -58,6 +65,9 @@ def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
                 next_review_at=mem.next_review_at(snap.stability_days, snap.last_seen_at, now),
                 due=queue == "due",
                 queue=queue,
+                you_said=source.raw_utterance if source else "",
+                correct=source.corrected_utterance if source else "",
+                why=source.explanation if source else "",
             )
         )
     ranked.sort(
