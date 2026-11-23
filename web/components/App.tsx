@@ -93,10 +93,10 @@ export default function App() {
       setSessionMode("due");
       setProgress({ completed: 0, total: generated.cards.length });
       setPlayerKey((value) => value + 1);
-      await refreshUnits();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not rebuild the queue");
     } finally {
+      await refreshUnits();
       setBusyPack(false);
     }
   }

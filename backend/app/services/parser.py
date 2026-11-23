@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 
 from app.schemas.openai_payloads import ParsedLogLLM
 from app.services.unit_catalog import (
+    keys_for_line,
     match_focus_keys,
     match_tracking_keys,
     match_unit_key,
+    phrase_unit_key,
     slug_from_phrase,
 )
 
@@ -16,7 +18,9 @@ _SECTION_SPLIT = re.compile(
     re.I | re.M,
 )
 _ERROR_RE = re.compile(
-    r"You said:\s*(.*?)\s*Correct:\s*(.*?)\s*Why:\s*(.*?)(?=(?:\n\s*You said:)|$)",
+    r"(?:You said|I said|Student(?: said)?|Incorrect|Wrong)\s*:\s*(.*?)\s*"
+    r"(?:Correct(?:ion)?|Should be)\s*:\s*(.*?)\s*"
+    r"(?:Why|Note|Explanation)\s*:\s*(.*?)(?=(?:\n\s*(?:You said|I said|Student|Incorrect|Wrong)\s*:)|$)",
     re.I | re.S,
 )
 _VOCAB_LINE = re.compile(
@@ -39,7 +43,7 @@ class ParsedVocab:
     item: str
     example_usage: str
     used_well: bool
-    unit_key: str | None
+    unit_key: str
 
 
 @dataclass
@@ -121,7 +125,7 @@ def _parse_vocab(section: str) -> list[ParsedVocab]:
                 item=item,
                 example_usage=example,
                 used_well=used_well,
-                unit_key=match_unit_key(item, example),
+                unit_key=phrase_unit_key(item, example),
             )
         )
     return items
@@ -161,11 +165,12 @@ def parse_session_log(raw_log: str) -> ParsedSession:
     focus_lines = _parse_list_section(focus_section) if focus_section else []
 
     tracking = [
-        ParsedTracking(text=line, unit_keys=match_tracking_keys(line)) for line in tracking_lines
+        ParsedTracking(text=line, unit_keys=keys_for_line(line, match_tracking_keys(line)))
+        for line in tracking_lines
     ]
     focus_keys: list[str] = []
     for line in focus_lines:
-        for key in match_focus_keys(line):
+        for key in keys_for_line(line, match_focus_keys(line)):
             if key not in focus_keys:
                 focus_keys.append(key)
 
@@ -203,20 +208,20 @@ def parsed_session_from_llm(payload: ParsedLogLLM) -> ParsedSession:
             item=_clean(row.item),
             example_usage=_clean(row.example_usage),
             used_well=row.used_well,
-            unit_key=match_unit_key(row.item, row.example_usage),
+            unit_key=phrase_unit_key(row.item, row.example_usage),
         )
         for row in payload.vocab
         if row.item.strip()
     ]
     tracking = [
-        ParsedTracking(text=_clean(line), unit_keys=match_tracking_keys(line))
+        ParsedTracking(text=_clean(line), unit_keys=keys_for_line(_clean(line), match_tracking_keys(line)))
         for line in payload.tracking
         if line.strip()
     ]
     focus_lines = [_clean(line) for line in payload.focus if line.strip()]
     focus_keys: list[str] = []
     for line in focus_lines:
-        for key in match_focus_keys(line):
+        for key in keys_for_line(line, match_focus_keys(line)):
             if key not in focus_keys:
                 focus_keys.append(key)
     return ParsedSession(

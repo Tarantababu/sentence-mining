@@ -35,6 +35,41 @@ def test_tracking_and_focus_map_to_units() -> None:
     assert "rather_not_vs_wouldnt_prefer" in parsed.focus_unit_keys
 
 
+def test_novel_log_items_get_their_own_keys() -> None:
+    log = """
+You said: I am agree with you
+Correct: I agree with you
+Why: don't use am with agree
+
+You said: I go to the shop every days
+Correct: I go to the shop every day
+Why: every day not every days
+
+VOCABULARY OF THE DAY
+- catch up: let's catch up next week
+- on the fence: I'm still on the fence (used well!)
+
+TRACKING LIST
+- phrasal verbs with get
+- third person -s
+
+FOCUS FOR NEXT LESSON
+- present perfect vs past
+"""
+    parsed = parse_session_log(log)
+    error_keys = {item.unit_key for item in parsed.errors}
+    assert "articles_a_the_zero" not in error_keys
+    assert any("agree" in key for key in error_keys)
+    assert any("every_day" in key or "shop" in key for key in error_keys)
+    vocab_keys = {item.unit_key for item in parsed.vocab}
+    assert any("catch_up" in key for key in vocab_keys)
+    assert all(item.unit_key for item in parsed.vocab)
+    tracking_keys = {key for item in parsed.tracking for key in item.unit_keys}
+    assert tracking_keys
+    assert parsed.focus_unit_keys
+    assert any("perfect" in key or "past" in key for key in parsed.focus_unit_keys)
+
+
 def test_repeat_occurrence_marks_recurring_without_flag() -> None:
     log = """
 You said: I attended to class

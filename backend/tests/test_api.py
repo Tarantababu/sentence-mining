@@ -81,6 +81,30 @@ def test_ingest_generate_units_and_review_roundtrip(client: TestClient) -> None:
     assert detail.status_code == 200
     assert "You said" in (detail.json().get("raw_log") or "")
 
+    novel = """
+You said: I am agree with you
+Correct: I agree with you
+Why: don't use am with agree
+
+VOCABULARY OF THE DAY
+- catch up: let's catch up next week
+
+TRACKING LIST
+- phrasal verbs with get
+
+FOCUS FOR NEXT LESSON
+- present perfect vs past
+"""
+    second = client.post("/api/sessions/ingest", json={"raw_log": novel})
+    assert second.status_code == 200, second.text
+    assert second.json()["error_count"] == 1
+    assert second.json()["vocab_count"] == 1
+    after = client.get("/api/units")
+    labels = {item["label"].lower() for item in after.json()["units"]}
+    assert any("agree" in label for label in labels)
+    assert any("catch up" in label for label in labels)
+    assert after.json()["stats"]["total_items"] > listed["stats"]["total_items"]
+
     settings = client.get("/api/settings")
     assert settings.status_code == 200
     assert settings.json()["daily_limit"] is None

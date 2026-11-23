@@ -192,7 +192,13 @@ export const CATALOG: UnitDef[] = [
     kind: "grammar",
     skill_tags: ["articles", "grammar"],
     is_structural: true,
-    patterns: [/by the bus/i, /to the school/i, /to school/i, /\bthe\b/i, /\barticles?\b/i],
+    patterns: [
+      /by the bus/i,
+      /to the school/i,
+      /by (?:the )?(?:bus|train|car|bike)\b/i,
+      /\bzero article\b/i,
+      /\barticles?\b/i,
+    ],
     templates: t(
       [
         "Complete: I went _____ school by _____. (institution / transport)",
@@ -265,4 +271,15 @@ export function matchTrackingKeys(text: string): string[] {
 export function slugFromPhrase(phrase: string): string {
   const cleaned = phrase.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return (cleaned || "misc").slice(0, 48);
+}
+
+export function phraseUnitKey(...texts: string[]): string {
+  const mapped = matchUnitKey(...texts);
+  if (mapped) return mapped;
+  const source = texts.find((text) => text?.trim()) || "misc";
+  return `item_${slugFromPhrase(source)}`;
+}
+
+export function keysForLine(text: string, mapped: string[]): string[] {
+  return mapped.length ? mapped : [phraseUnitKey(text)];
 }

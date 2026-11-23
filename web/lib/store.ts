@@ -1,6 +1,6 @@
 import "server-only";
 
-import { CATALOG, CATALOG_BY_KEY } from "./catalog";
+import { CATALOG, CATALOG_BY_KEY, keysForLine, matchFocusKeys, phraseUnitKey } from "./catalog";
 import { asJson, readJson, sql } from "./db";
 import {
   applyOutcome,
@@ -16,7 +16,6 @@ import {
   urgency,
   utcnow,
 } from "./memory";
-import { matchFocusKeys } from "./catalog";
 import { humanizeText } from "./humanize";
 import { generatePack } from "./material";
 import { completeJson, parsedLogSchema } from "./openai";
@@ -94,7 +93,7 @@ async function getOrCreateUnit(key: string, label?: string, kind = "chunk"): Pro
      returning *`,
     [
       key,
-      defn?.label ?? label ?? key.replaceAll("_", " "),
+      defn?.label ?? label ?? key.replace(/^item_/, "").replaceAll("_", " "),
       defn?.kind ?? kind,
       asJson(defn?.skill_tags ?? ["misc"]),
       defn?.is_structural ?? false,
@@ -217,17 +216,14 @@ export async function ingestSession(
   }
 
   for (const vocab of parsed.vocab) {
-    let unit: UnitRow | undefined;
-    if (vocab.unit_key) {
-      unit = await getOrCreateUnit(vocab.unit_key, vocab.item);
-      touched.add(unit.key);
-    }
+    const unit = await getOrCreateUnit(vocab.unit_key, vocab.item);
+    touched.add(unit.key);
     await sql(
       `insert into session_vocab (session_id, unit_id, item, example_usage, used_well)
        values ($1, $2, $3, $4, $5)`,
-      [sessionId, unit?.id ?? null, vocab.item, vocab.example_usage, vocab.used_well],
+      [sessionId, unit.id, vocab.item, vocab.example_usage, vocab.used_well],
     );
-    if (unit && vocab.used_well) {
+    if (vocab.used_well) {
       const row = await memoryRow(ownerId, unit.id);
       const update = applyOutcome(snapshotFromRow(row), now, "used_well", { touchLastSeen: true });
       await persistMemory(ownerId, unit.id, update);
@@ -236,15 +232,12 @@ export async function ingestSession(
 
   const trackingKeys = new Set<string>();
   for (const item of parsed.tracking) {
-    let unit: UnitRow | undefined;
-    if (item.unit_keys[0]) {
-      unit = await getOrCreateUnit(item.unit_keys[0], item.text);
-      trackingKeys.add(unit.key);
-      touched.add(unit.key);
-    }
+    const unit = await getOrCreateUnit(item.unit_keys[0] || item.text, item.text);
+    trackingKeys.add(unit.key);
+    touched.add(unit.key);
     await sql(
       "insert into session_tracking (session_id, unit_id, text) values ($1, $2, $3)",
-      [sessionId, unit?.id ?? null, item.text],
+      [sessionId, unit.id, item.text],
     );
     for (const key of item.unit_keys) trackingKeys.add(key);
   }
@@ -259,6 +252,29 @@ export async function ingestSession(
 }
 
 async function rebuildFlagsFromHistory(ownerId: string): Promise<void> {
+  const orphanVocab = await sql<{ id: number; item: string; example_usage: string }>(
+    `select v.id, v.item, v.example_usage
+     from session_vocab v
+     join sessions s on s.id = v.session_id
+     where s.owner_id = $1 and v.unit_id is null`,
+    [ownerId],
+  );
+  for (const row of orphanVocab) {
+    const unit = await getOrCreateUnit(phraseUnitKey(row.item, row.example_usage), row.item);
+    await sql("update session_vocab set unit_id = $1 where id = $2", [unit.id, row.id]);
+  }
+  const orphanTracking = await sql<{ id: number; text: string }>(
+    `select t.id, t.text
+     from session_tracking t
+     join sessions s on s.id = t.session_id
+     where s.owner_id = $1 and t.unit_id is null`,
+    [ownerId],
+  );
+  for (const row of orphanTracking) {
+    const unit = await getOrCreateUnit(phraseUnitKey(row.text), row.text);
+    await sql("update session_tracking set unit_id = $1 where id = $2", [unit.id, row.id]);
+  }
+
   await sql(
     "update unit_memories set is_focus = false, is_tracking = false where owner_id = $1",
     [ownerId],
@@ -281,13 +297,29 @@ async function rebuildFlagsFromHistory(ownerId: string): Promise<void> {
   }
 
   const tracking = await sql<{ unit_id: number }>(
-    `select distinct t.unit_id
-     from session_tracking t
-     join sessions s on s.id = t.session_id
-     where s.owner_id = $1 and t.unit_id is not null`,
+    `select distinct unit_id from (
+       select t.unit_id
+       from session_tracking t
+       join sessions s on s.id = t.session_id
+       where s.owner_id = $1 and t.unit_id is not null
+       union
+       select v.unit_id
+       from session_vocab v
+       join sessions s on s.id = v.session_id
+       where s.owner_id = $1 and v.unit_id is not null and v.used_well = false
+     ) tracked`,
     [ownerId],
   );
   for (const row of tracking) {
+    const existing = await memoryRow(ownerId, row.unit_id);
+    if (!existing) {
+      await sql(
+        `insert into unit_memories (owner_id, unit_id, stability_days, last_seen_at, is_tracking)
+         values ($1, $2, $3, null, true)
+         on conflict (owner_id, unit_id) do nothing`,
+        [ownerId, row.unit_id, S_INIT],
+      );
+    }
     await sql(
       `update unit_memories set is_tracking = true, updated_at = now()
        where owner_id = $1 and unit_id = $2`,
@@ -307,14 +339,16 @@ async function rebuildFlagsFromHistory(ownerId: string): Promise<void> {
     }>(session.parsed_payload, {});
     for (const key of payload.focus_unit_keys ?? []) focusKeys.add(key);
     for (const line of payload.focus ?? []) {
-      for (const key of matchFocusKeys(line)) focusKeys.add(key);
+      for (const key of keysForLine(line, matchFocusKeys(line))) focusKeys.add(key);
     }
     if (session.focus_next_lesson) {
-      for (const key of matchFocusKeys(session.focus_next_lesson)) focusKeys.add(key);
+      for (const key of keysForLine(session.focus_next_lesson, matchFocusKeys(session.focus_next_lesson))) {
+        focusKeys.add(key);
+      }
     }
   }
   for (const key of focusKeys) {
-    const unit = await getOrCreateUnit(key);
+    const unit = await getOrCreateUnit(key, key.replace(/^item_/, "").replaceAll("_", " "));
     const existing = await memoryRow(ownerId, unit.id);
     if (!existing) {
       await sql(

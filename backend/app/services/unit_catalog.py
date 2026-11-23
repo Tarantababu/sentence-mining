@@ -217,8 +217,8 @@ CATALOG: tuple[UnitDef, ...] = (
         patterns=(
             r"by the bus",
             r"to the school",
-            r"to school",
-            r"\bthe\b",
+            r"by (?:the )?(?:bus|train|car|bike)\b",
+            r"\bzero article\b",
             r"\barticles?\b",
         ),
         templates=_t(
@@ -297,6 +297,18 @@ def slug_from_phrase(phrase: str) -> str:
     return (cleaned or "misc")[:48]
 
 
+def phrase_unit_key(*texts: str) -> str:
+    mapped = match_unit_key(*texts)
+    if mapped:
+        return mapped
+    source = next((part for part in texts if part and part.strip()), "misc")
+    return f"item_{slug_from_phrase(source)}"
+
+
+def keys_for_line(text: str, mapped: list[str]) -> list[str]:
+    return mapped if mapped else [phrase_unit_key(text)]
+
+
 def ensure_catalog(db: Session) -> None:
     existing = {row.key for row in db.scalars(select(Unit)).all()}
     added = False
@@ -324,7 +336,7 @@ def get_or_create_unit(db: Session, key: str, label: str | None = None, kind: st
     defn = CATALOG_BY_KEY.get(key)
     unit = Unit(
         key=key,
-        label=defn.label if defn else (label or key.replace("_", " ")),
+        label=defn.label if defn else (label or key.removeprefix("item_").replace("_", " ")),
         kind=defn.kind if defn else kind,
         skill_tags=list(defn.skill_tags) if defn else ["misc"],
         is_structural=defn.is_structural if defn else False,

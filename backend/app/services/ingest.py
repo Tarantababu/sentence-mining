@@ -157,20 +157,18 @@ def ingest_session(
         _persist_memory(db, unit, update)
 
     for vocab in parsed.vocab:
-        unit = None
-        if vocab.unit_key:
-            unit = get_or_create_unit(db, vocab.unit_key, label=vocab.item)
-            touched[unit.key] = unit
+        unit = get_or_create_unit(db, vocab.unit_key, label=vocab.item)
+        touched[unit.key] = unit
         db.add(
             SessionVocab(
                 session_id=session.id,
-                unit_id=unit.id if unit else None,
+                unit_id=unit.id,
                 item=vocab.item,
                 example_usage=vocab.example_usage,
                 used_well=vocab.used_well,
             )
         )
-        if unit is not None and vocab.used_well:
+        if vocab.used_well:
             row = _memory_row(db, unit.id)
             snap = _snapshot(row)
             update = mem.apply_outcome(snap, now, "used_well", touch_last_seen=True)
@@ -178,25 +176,26 @@ def ingest_session(
 
     tracking_keys: set[str] = set()
     for item in parsed.tracking:
-        unit = None
-        if item.unit_keys:
-            unit = get_or_create_unit(db, item.unit_keys[0], label=item.text)
-            tracking_keys.add(unit.key)
-            touched[unit.key] = unit
+        unit = get_or_create_unit(db, item.unit_keys[0], label=item.text)
+        tracking_keys.add(unit.key)
+        touched[unit.key] = unit
         db.add(
             SessionTracking(
                 session_id=session.id,
-                unit_id=unit.id if unit else None,
+                unit_id=unit.id,
                 text=item.text,
             )
         )
         for key in item.unit_keys:
             tracking_keys.add(key)
+    for vocab in parsed.vocab:
+        if not vocab.used_well:
+            tracking_keys.add(vocab.unit_key)
 
     focus_keys = set(parsed.focus_unit_keys)
     flag_keys = tracking_keys | focus_keys
     for key in flag_keys:
-        unit = get_or_create_unit(db, key)
+        unit = get_or_create_unit(db, key, label=key.removeprefix("item_").replace("_", " "))
         touched[unit.key] = unit
         row = _memory_row(db, unit.id)
         if row is None:

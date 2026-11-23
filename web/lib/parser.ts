@@ -1,4 +1,11 @@
-import { matchFocusKeys, matchTrackingKeys, matchUnitKey, slugFromPhrase } from "./catalog";
+import {
+  keysForLine,
+  matchFocusKeys,
+  matchTrackingKeys,
+  matchUnitKey,
+  phraseUnitKey,
+  slugFromPhrase,
+} from "./catalog";
 
 export type ParsedError = {
   raw_utterance: string;
@@ -12,7 +19,7 @@ export type ParsedVocab = {
   item: string;
   example_usage: string;
   used_well: boolean;
-  unit_key: string | null;
+  unit_key: string;
 };
 
 export type ParsedTracking = {
@@ -42,7 +49,8 @@ export type ParsedLogLLM = {
 };
 
 const SECTION_SPLIT = /(?=^\s*(?:VOCABULARY OF THE DAY|TRACKING LIST|FOCUS FOR NEXT LESSON)\s*$)/gim;
-const ERROR_RE = /You said:\s*(.*?)\s*Correct:\s*(.*?)\s*Why:\s*(.*?)(?=(?:\n\s*You said:)|$)/gis;
+const ERROR_RE =
+  /(?:You said|I said|Student(?: said)?|Incorrect|Wrong)\s*:\s*(.*?)\s*(?:Correct(?:ion)?|Should be)\s*:\s*(.*?)\s*(?:Why|Note|Explanation)\s*:\s*(.*?)(?=(?:\n\s*(?:You said|I said|Student|Incorrect|Wrong)\s*:)|$)/gis;
 const VOCAB_LINE = /^\s*[-*•]?\s*(.+?)(?:\s*[:—–-]\s*|\s{2,})(.+)?$/;
 const USED_WELL = /used well!/i;
 
@@ -102,7 +110,7 @@ function parseVocab(section: string): ParsedVocab[] {
       item,
       example_usage: example,
       used_well: usedWell,
-      unit_key: matchUnitKey(item, example),
+      unit_key: phraseUnitKey(item, example),
     });
   }
   return items;
@@ -139,11 +147,13 @@ export function parseSessionLog(rawLog: string): ParsedSession {
   const focusLines = focusSection ? parseListSection(focusSection) : [];
   const tracking = trackingLines.map((line) => ({
     text: line,
-    unit_keys: matchTrackingKeys(line),
+    unit_keys: keysForLine(line, matchTrackingKeys(line)),
   }));
   const focusKeys: string[] = [];
   for (const line of focusLines) {
-    for (const key of matchFocusKeys(line)) if (!focusKeys.includes(key)) focusKeys.push(key);
+    for (const key of keysForLine(line, matchFocusKeys(line))) {
+      if (!focusKeys.includes(key)) focusKeys.push(key);
+    }
   }
 
   return {
@@ -179,15 +189,17 @@ export function parsedSessionFromLlm(payload: ParsedLogLLM): ParsedSession {
       item: clean(row.item),
       example_usage: clean(row.example_usage || ""),
       used_well: !!row.used_well,
-      unit_key: matchUnitKey(row.item, row.example_usage || ""),
+      unit_key: phraseUnitKey(row.item, row.example_usage || ""),
     }));
   const tracking = payload.tracking
     .filter((line) => line.trim())
-    .map((line) => ({ text: clean(line), unit_keys: matchTrackingKeys(line) }));
+    .map((line) => ({ text: clean(line), unit_keys: keysForLine(clean(line), matchTrackingKeys(line)) }));
   const focusLines = payload.focus.filter((line) => line.trim()).map(clean);
   const focusKeys: string[] = [];
   for (const line of focusLines) {
-    for (const key of matchFocusKeys(line)) if (!focusKeys.includes(key)) focusKeys.push(key);
+    for (const key of keysForLine(line, matchFocusKeys(line))) {
+      if (!focusKeys.includes(key)) focusKeys.push(key);
+    }
   }
   return {
     errors,
