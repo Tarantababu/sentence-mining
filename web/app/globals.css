@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans), "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 500px at 50% -120px, rgba(88, 204, 2, 0.12), transparent 60%),
+    #f4efe6;
+  color: #12201c;
+}
+
+.font-serif {
+  font-family: var(--font-serif), Georgia, serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+::selection {
+  background: #c6eb9a;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes teach-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blank-pulse {
+  0%,
+  100% {
+    border-color: #58cc02;
+    opacity: 1;
+  }
+  50% {
+    border-color: #1f6f54;
+    opacity: 0.55;
+  }
+}
+
+.card-in {
+  animation: card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.teach-in {
+  animation: teach-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.blank-pulse {
+  animation: blank-pulse 1.6s ease-in-out infinite;
+}
+
+.teach-ok {
+  background: linear-gradient(180deg, rgba(88, 204, 2, 0.16), rgba(88, 204, 2, 0.06));
+  border: 1px solid rgba(31, 111, 84, 0.25);
+}
+
+.teach-close {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(217, 119, 6, 0.28);
+}
+
+.teach-miss {
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.12), rgba(244, 63, 94, 0.04));
+  border: 1px solid rgba(225, 29, 72, 0.22);
+}
+
+.say-it {
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(18, 32, 28, 0.12);
+}
+
+.progress-fill {
+  transform-origin: left center;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
