@@ -268,3 +268,35 @@ def test_generate_pack_keeps_valid_llm_cards_and_pads(monkeypatch: pytest.Monkey
         "attend_no_prep",
         "do_the_school_run",
     }
+
+
+def test_generate_pack_rejects_dummy_carrier_cards(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentence = "I think mornings are quite hectic these days, except on Fridays."
+    payload = GeneratedPack.model_validate(
+        {
+            "cards": [
+                {
+                    "card_type": "transform_sentence",
+                    "prompt": f"I will mention {sentence} in a short everyday sentence.",
+                    "answer": f"I'll use {sentence} in a short everyday sentence.",
+                    "why": f"Keep the surrounding English simple; target {sentence}.",
+                    "unit_keys": ["misc_mornings"],
+                }
+            ],
+            "speaking_prompts": [],
+        }
+    )
+    monkeypatch.setattr("app.services.material_generator.complete_json", lambda *a, **k: payload)
+    unit = _unit("misc_mornings", 2.0)
+    unit.label = sentence
+    unit.you_said = "I will mention mornings are quite hectic."
+    unit.correct = sentence
+    unit.why = "Use I think, not I will mention."
+    unit.queue = "due"
+    unit.due = True
+    pack = generate_pack([unit], budget_cards=1, budget_prompts=1)
+    assert pack.cards
+    blob = " ".join(f"{card.prompt} {card.answer} {card.why}" for card in pack.cards).lower()
+    assert "in a short everyday sentence" not in blob
+    assert pack.cards[0].prompt != payload.cards[0].prompt
+    assert "mornings" in blob

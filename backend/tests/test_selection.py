@@ -6,7 +6,7 @@ from app.services.memory_engine import (
     select_card_groups,
     select_due_then_stretch,
 )
-from app.services.material_generator import blank_from_pair, fallback_pack
+from app.services.material_generator import blank_from_pair, can_practice, fallback_pack
 
 
 def _unit(key: str, urgency: float, tags: list[str], recurring: bool = False) -> RankedUnit:
@@ -112,6 +112,32 @@ def test_fallback_uses_learner_correction() -> None:
     assert "before dinner" not in blob
     assert "weekend" in blob
     assert 1 <= len(card.unit_keys) <= 2
+
+
+def test_long_sentence_without_pair_is_not_practiced() -> None:
+    unit = _unit("misc_mornings", 2.0, ["misc"])
+    unit.label = "I think mornings are quite hectic these days, except on Fridays."
+    unit.queue = "due"
+    unit.due = True
+    assert can_practice(unit) is False
+    pack = fallback_pack([unit], budget_cards=1, budget_prompts=1)
+    assert pack.cards == []
+
+
+def test_transform_uses_you_said_not_a_carrier() -> None:
+    unit = _unit("misc_mornings", 2.0, ["misc"])
+    unit.you_said = "I will mention mornings are quite hectic."
+    unit.correct = "I think mornings are quite hectic these days, except on Fridays."
+    unit.why = "Use I think, not I will mention."
+    unit.label = unit.correct
+    unit.queue = "due"
+    unit.due = True
+    pack = fallback_pack([unit], budget_cards=3, budget_prompts=1)
+    assert pack.cards
+    blob = " ".join(f"{card.prompt} {card.answer} {card.why}" for card in pack.cards).lower()
+    assert "in a short everyday sentence" not in blob
+    assert any(card.prompt == unit.you_said and card.answer == unit.correct for card in pack.cards)
+    assert all("i will mention" not in card.answer.lower() for card in pack.cards)
 
 
 def test_fallback_pack_respects_budget() -> None:
