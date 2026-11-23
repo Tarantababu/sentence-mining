@@ -76,7 +76,7 @@ export default function UnitInspector({ units, dueCards, stats, now, busy, onRev
   const clock = now ? new Date(now) : new Date();
   const due = units.filter((unit) => unit.due);
   const rest = units.filter((unit) => !unit.due);
-  const dailyDone = stats && stats.remaining_today === 0;
+  const dailyDone = stats?.remaining_today === 0;
   const newCount = stats?.new ?? due.filter((unit) => !unit.last_seen_at).length;
   const reviewCount = stats?.review ?? due.filter((unit) => unit.last_seen_at && unit.success_count > 0).length;
   const learnCount = stats?.learning ?? Math.max(0, due.length - reviewCount);
