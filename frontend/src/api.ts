@@ -30,6 +30,25 @@ export type StudyPack = {
   speaking_prompts: SpeakingPrompt[];
 };
 
+export type DeckStats = {
+  total_items: number;
+  learning_now: number;
+  waiting: number;
+  learnt: number;
+  due: number;
+  new: number;
+  learning: number;
+  review: number;
+  stretch: number;
+  reps_today: number;
+  reps_total: number;
+  knew_it_today: number;
+  shaky_today: number;
+  missed_today: number;
+  daily_limit: number | null;
+  remaining_today: number | null;
+};
+
 export type UnitRow = {
   key?: string;
   label: string;
@@ -115,6 +134,20 @@ export const api = {
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<StudyPack>;
   },
+  settings: () =>
+    request<{
+      openai_configured: boolean;
+      has_personal_key: boolean;
+      has_hosted_key: boolean;
+      api_key_set: boolean;
+      daily_limit: number | null;
+      remaining_today: number | null;
+    }>("/api/settings"),
+  saveDailyLimit: (daily_limit: number | null) =>
+    request<{ daily_limit: number | null; remaining_today: number | null; api_key_set: boolean }>(
+      "/api/settings",
+      { method: "PUT", body: JSON.stringify({ daily_limit }) },
+    ),
   generatePack: (opts?: {
     budget_cards?: number;
     budget_prompts?: number;
@@ -124,7 +157,7 @@ export const api = {
     request<StudyPack>("/api/study-pack/generate", {
       method: "POST",
       body: JSON.stringify({
-        budget_cards: opts?.budget_cards ?? 8,
+        ...(opts?.budget_cards != null ? { budget_cards: opts.budget_cards } : {}),
         budget_prompts: opts?.budget_prompts ?? 3,
         due_only: opts?.due_only === true,
         stretch_only: opts?.stretch_only === true,
@@ -135,5 +168,5 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ card_id, result }),
     }),
-  units: () => request<{ units: UnitRow[]; now: string; due_count: number }>("/api/units"),
+  units: () => request<{ units: UnitRow[]; now: string; due_count: number; stats: DeckStats }>("/api/units"),
 };

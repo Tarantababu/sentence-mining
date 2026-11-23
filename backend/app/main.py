@@ -9,6 +9,7 @@ from app import models as _models  # noqa: F401
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
 from app.routers import health, reviews, sessions, study_pack, units
+from app.routers import settings as settings_router
 from app.services.seed import seed_if_needed
 from app.services.unit_catalog import ensure_catalog
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(health.router)
+    application.include_router(settings_router.router)
     application.include_router(sessions.router)
     application.include_router(study_pack.router)
     application.include_router(reviews.router)

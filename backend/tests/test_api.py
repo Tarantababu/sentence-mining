@@ -80,3 +80,10 @@ def test_ingest_generate_units_and_review_roundtrip(client: TestClient) -> None:
     detail = client.get(f"/api/sessions/{logs[0]['id']}")
     assert detail.status_code == 200
     assert "You said" in (detail.json().get("raw_log") or "")
+
+    settings = client.get("/api/settings")
+    assert settings.status_code == 200
+    assert settings.json()["daily_limit"] is None
+    assert settings.json()["api_key_set"] is False
+    assert listed["stats"]["total_items"] >= 8
+    assert listed["stats"]["daily_limit"] is None

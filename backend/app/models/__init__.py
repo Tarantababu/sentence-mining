@@ -1,4 +1,5 @@
 from app.models.entities import (
+    AppSetting,
     Review,
     SessionError,
     SessionRecord,
@@ -11,6 +12,7 @@ from app.models.entities import (
 )
 
 __all__ = [
+    "AppSetting",
     "Review",
     "SessionError",
     "SessionRecord",

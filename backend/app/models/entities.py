@@ -141,6 +141,13 @@ class StudyCard(Base):
     reviews: Mapped[list[Review]] = relationship(back_populates="card")
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    daily_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class Review(Base):
     __tablename__ = "reviews"
 

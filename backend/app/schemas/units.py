@@ -27,7 +27,27 @@ class UnitMemoryOut(BaseModel):
     queue: str = "due"
 
 
+class DeckStats(BaseModel):
+    total_items: int
+    learning_now: int
+    waiting: int
+    learnt: int
+    due: int
+    new: int
+    learning: int
+    review: int
+    stretch: int
+    reps_today: int
+    reps_total: int
+    knew_it_today: int
+    shaky_today: int
+    missed_today: int
+    daily_limit: int | None
+    remaining_today: int | None
+
+
 class UnitsResponse(BaseModel):
     units: list[UnitMemoryOut]
     now: datetime
     due_count: int = 0
+    stats: DeckStats | None = None

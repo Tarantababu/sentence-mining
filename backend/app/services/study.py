@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Review, StudyCard, StudyPack, Unit, UnitMemory
+from app.models import AppSetting, Review, StudyCard, StudyPack, Unit, UnitMemory
 from app.schemas.reviews import ReviewResult
 from app.schemas.study import (
     SpeakingPromptOut,
     StudyCardOut,
     StudyPackResponse,
 )
-from app.schemas.units import UnitMemoryOut, UnitsResponse
+from app.schemas.units import DeckStats, UnitMemoryOut, UnitsResponse
 from app.services import memory_engine as mem
 from app.services.ingest import _memory_row, _persist_memory, _snapshot
 from app.services.material_generator import generate_pack
@@ -69,6 +69,87 @@ def _rank_units(db: Session, now: datetime) -> list[RankedUnit]:
     return ranked
 
 
+def _day_start(now: datetime) -> datetime:
+    current = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    return current.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def get_app_settings(db: Session) -> AppSetting:
+    row = db.get(AppSetting, 1)
+    if row is None:
+        row = AppSetting(id=1, daily_limit=None)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def count_reviews_today(db: Session, now: datetime | None = None) -> dict[str, int]:
+    now = now or mem.utcnow()
+    start = _day_start(now)
+    rows = db.execute(select(Review.result, func.count()).where(Review.submitted_at >= start).group_by(Review.result)).all()
+    tallies = {name: 0 for name in ("knew_it", "shaky", "missed")}
+    total = 0
+    for result, n in rows:
+        tallies[str(result)] = int(n)
+        total += int(n)
+    all_time = int(db.scalar(select(func.count()).select_from(Review)) or 0)
+    return {
+        "total": total,
+        "knew_it": tallies["knew_it"],
+        "shaky": tallies["shaky"],
+        "missed": tallies["missed"],
+        "all_time": all_time,
+    }
+
+
+def remaining_daily_budget(db: Session, requested: int | None = None, now: datetime | None = None) -> int | None:
+    limit = get_app_settings(db).daily_limit
+    today = count_reviews_today(db, now)["total"]
+    if limit is None:
+        return requested
+    leftover = max(0, int(limit) - today)
+    if requested is None:
+        return leftover
+    return min(requested, leftover)
+
+
+def deck_stats(db: Session, now: datetime | None = None) -> DeckStats:
+    now = now or mem.utcnow()
+    ranked = _rank_units(db, now)
+    total_items = int(db.scalar(select(func.count()).select_from(Unit)) or 0)
+    due = [unit for unit in ranked if unit.due]
+    stretch = [unit for unit in ranked if unit.queue == "stretch"]
+    new_count = sum(1 for unit in due if unit.last_seen_at is None)
+    review = sum(1 for unit in due if unit.last_seen_at is not None and unit.success_count > 0)
+    learning = max(0, len(due) - review)
+    learnt = sum(
+        1 for unit in ranked if unit.queue == "upcoming" and unit.success_count > 0 and unit.p_k >= 0.9
+    )
+    learning_now = sum(1 for unit in ranked if unit.due or unit.queue == "stretch")
+    reps = count_reviews_today(db, now)
+    daily_limit = get_app_settings(db).daily_limit
+    remaining = remaining_daily_budget(db, now=now)
+    return DeckStats(
+        total_items=total_items,
+        learning_now=learning_now,
+        waiting=max(0, total_items - len(ranked)),
+        learnt=learnt,
+        due=len(due),
+        new=new_count,
+        learning=learning,
+        review=review,
+        stretch=len(stretch),
+        reps_today=reps["total"],
+        reps_total=reps["all_time"],
+        knew_it_today=reps["knew_it"],
+        shaky_today=reps["shaky"],
+        missed_today=reps["missed"],
+        daily_limit=daily_limit,
+        remaining_today=None if daily_limit is None else remaining,
+    )
+
+
 def pack_to_response(pack: StudyPack) -> StudyPackResponse:
     prompts = [
         SpeakingPromptOut(
@@ -106,7 +187,7 @@ def pack_to_response(pack: StudyPack) -> StudyPackResponse:
 def generate_study_pack(
     db: Session,
     *,
-    budget_cards: int = 8,
+    budget_cards: int | None = None,
     budget_prompts: int = 3,
     due_only: bool = False,
     stretch_only: bool = False,
@@ -118,10 +199,15 @@ def generate_study_pack(
         ranked = [unit for unit in ranked if unit.due]
     elif stretch_only:
         ranked = [unit for unit in ranked if not unit.due]
+    allowed = remaining_daily_budget(db, budget_cards, now)
+    if allowed is None:
+        allowed = len(ranked)
     if ranked:
-        budget_cards = min(budget_cards, len(ranked))
+        budget_cards = min(max(0, allowed), len(ranked))
     else:
         budget_cards = 0
+        budget_prompts = 0
+    if budget_cards == 0:
         budget_prompts = 0
     draft = generate_pack(ranked, budget_cards=budget_cards, budget_prompts=budget_prompts)
     pack = StudyPack(
@@ -201,7 +287,12 @@ def list_units(db: Session, now: datetime | None = None) -> UnitsResponse:
                 queue=item.queue,
             )
         )
-    return UnitsResponse(units=out, now=now, due_count=sum(1 for item in out if item.due))
+    return UnitsResponse(
+        units=out,
+        now=now,
+        due_count=sum(1 for item in out if item.due),
+        stats=deck_stats(db, now),
+    )
 
 
 def submit_review(db: Session, card_id: int, result: ReviewResult) -> Review:

@@ -27,6 +27,7 @@ import {
   parsedSessionFromLlm,
 } from "./parser";
 import { SAMPLE_LOG } from "./sample";
+import { getViewerSettings } from "./secrets";
 
 type UnitRow = {
   id: number;
@@ -507,9 +508,112 @@ export async function getSessionLog(
   };
 }
 
+export async function countReviewsToday(ownerId: string): Promise<{
+  total: number;
+  knew_it: number;
+  shaky: number;
+  missed: number;
+  all_time: number;
+}> {
+  const today = await sql<{
+    total: number;
+    knew_it: number;
+    shaky: number;
+    missed: number;
+  }>(
+    `select count(*)::int as total,
+            count(*) filter (where result = 'knew_it')::int as knew_it,
+            count(*) filter (where result = 'shaky')::int as shaky,
+            count(*) filter (where result = 'missed')::int as missed
+     from reviews
+     where owner_id = $1 and submitted_at >= date_trunc('day', now())`,
+    [ownerId],
+  );
+  const all = await sql<{ n: number }>(
+    "select count(*)::int as n from reviews where owner_id = $1",
+    [ownerId],
+  );
+  const row = today[0];
+  return {
+    total: Number(row?.total ?? 0),
+    knew_it: Number(row?.knew_it ?? 0),
+    shaky: Number(row?.shaky ?? 0),
+    missed: Number(row?.missed ?? 0),
+    all_time: Number(all[0]?.n ?? 0),
+  };
+}
+
+export async function remainingDailyBudget(ownerId: string, requested?: number): Promise<number> {
+  const { daily_limit } = await getViewerSettings(ownerId);
+  const { total } = await countReviewsToday(ownerId);
+  if (daily_limit == null) {
+    return requested ?? Number.POSITIVE_INFINITY;
+  }
+  const leftover = Math.max(0, daily_limit - total);
+  if (requested == null) return leftover;
+  return Math.min(requested, leftover);
+}
+
+export type DeckStats = {
+  total_items: number;
+  learning_now: number;
+  waiting: number;
+  learnt: number;
+  due: number;
+  new: number;
+  learning: number;
+  review: number;
+  stretch: number;
+  reps_today: number;
+  reps_total: number;
+  knew_it_today: number;
+  shaky_today: number;
+  missed_today: number;
+  daily_limit: number | null;
+  remaining_today: number | null;
+};
+
+export async function deckStats(ownerId: string): Promise<DeckStats> {
+  await ensureCatalog();
+  const now = utcnow();
+  const totalRows = await sql<{ n: number }>("select count(*)::int as n from units");
+  const totalItems = Number(totalRows[0]?.n ?? 0);
+  const ranked = await rankUnits(ownerId, now);
+  const due = ranked.filter((unit) => unit.due);
+  const stretch = ranked.filter((unit) => unit.queue === "stretch");
+  const newCount = due.filter((unit) => unit.last_seen_at == null).length;
+  const review = due.filter((unit) => unit.last_seen_at != null && unit.success_count > 0).length;
+  const learning = Math.max(0, due.length - review);
+  const learnt = ranked.filter(
+    (unit) => unit.queue === "upcoming" && unit.success_count > 0 && unit.p_k >= 0.9,
+  ).length;
+  const learningNow = ranked.filter((unit) => unit.due || unit.queue === "stretch").length;
+  const waiting = Math.max(0, totalItems - ranked.length);
+  const reps = await countReviewsToday(ownerId);
+  const { daily_limit } = await getViewerSettings(ownerId);
+  return {
+    total_items: totalItems,
+    learning_now: learningNow,
+    waiting,
+    learnt,
+    due: due.length,
+    new: newCount,
+    learning,
+    review,
+    stretch: stretch.length,
+    reps_today: reps.total,
+    reps_total: reps.all_time,
+    knew_it_today: reps.knew_it,
+    shaky_today: reps.shaky,
+    missed_today: reps.missed,
+    daily_limit,
+    remaining_today: daily_limit == null ? null : Math.max(0, daily_limit - reps.total),
+  };
+}
+
 export async function generateStudyPack(
   ownerId: string,
-  budgetCards = 8,
+  budgetCards?: number,
   budgetPrompts = 3,
   opts: { dueOnly?: boolean; stretchOnly?: boolean } = {},
 ): Promise<StudyPackOut> {
@@ -521,8 +625,10 @@ export async function generateStudyPack(
   } else if (opts.stretchOnly) {
     ranked = ranked.filter((unit) => !unit.due);
   }
-  budgetCards = ranked.length ? Math.min(budgetCards, ranked.length) : 0;
-  if (!ranked.length) {
+  const allowed = await remainingDailyBudget(ownerId, budgetCards);
+  const capped = Number.isFinite(allowed) ? allowed : ranked.length;
+  budgetCards = ranked.length ? Math.min(Math.max(0, Math.floor(capped)), ranked.length) : 0;
+  if (!ranked.length || budgetCards === 0) {
     budgetPrompts = 0;
   }
   const draft = await generatePack(ownerId, ranked, budgetCards, budgetPrompts);
@@ -619,9 +725,11 @@ export async function listUnits(ownerId: string) {
   ]);
   const byUnit = new Map(memories.map((row) => [row.unit_id, row]));
   const dueCount = ranked.filter((item) => item.due).length;
+  const stats = await deckStats(ownerId);
   return {
     now: now.toISOString(),
     due_count: dueCount,
+    stats,
     units: ranked.map((item) => {
       const unit = byKey.get(item.key)!;
       const snap = snapshotFromRow(byUnit.get(unit.id));

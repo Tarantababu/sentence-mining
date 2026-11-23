@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class StudyPackGenerateRequest(BaseModel):
-    budget_cards: int = Field(default=8, ge=1, le=20)
+    budget_cards: int | None = Field(default=None, ge=1, le=200)
     budget_prompts: int = Field(default=3, ge=0, le=10)
     due_only: bool = False
     stretch_only: bool = False

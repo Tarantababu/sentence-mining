@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, IngestResponse, ReviewResult, StudyPack, UnitRow } from "./api";
+import { api, DeckStats, IngestResponse, ReviewResult, StudyPack, UnitRow } from "./api";
 import CardPlayer from "./components/CardPlayer";
 import IngestModal from "./components/IngestModal";
 import LogHistory from "./components/LogHistory";
+import SettingsPanel from "./components/SettingsPanel";
 import UnitInspector from "./components/UnitInspector";
 import { markSessionComplete, readStreak } from "./lib/streak";
 
-type View = "practice" | "logs" | "memory";
+type View = "practice" | "logs" | "memory" | "settings";
 type SessionMode = "due" | "stretch";
 
 const TABS: { id: View; label: string }[] = [
+  { id: "memory", label: "Dashboard" },
   { id: "practice", label: "Practice" },
   { id: "logs", label: "Logs" },
-  { id: "memory", label: "Review" },
+  { id: "settings", label: "Settings" },
 ];
 
 function dueCardsOf(pack: StudyPack | null) {
@@ -43,11 +45,13 @@ export default function App() {
   const [clock, setClock] = useState<string | undefined>();
   const [sessionMode, setSessionMode] = useState<SessionMode>("due");
   const [startIndex, setStartIndex] = useState(0);
+  const [stats, setStats] = useState<DeckStats | null>(null);
 
   const refreshUnits = useCallback(async () => {
     const listed = await api.units();
     setUnits(listed.units);
     setClock(listed.now);
+    setStats(listed.stats);
     return listed;
   }, []);
 
@@ -103,11 +107,18 @@ export default function App() {
 
   async function startDueReviews(index = 0) {
     setError(null);
+    if (stats?.remaining_today === 0) {
+      setNotice("Daily limit reached. Change it in Settings, or continue tomorrow.");
+      setView("memory");
+      return;
+    }
     setBusyPack(true);
     try {
       const generated = await api.generatePack({
         due_only: true,
-        budget_cards: Math.min(8, Math.max(liveDueCount, 1)),
+        ...(stats?.remaining_today != null
+          ? { budget_cards: Math.min(stats.remaining_today, Math.max(liveDueCount, 1)) }
+          : {}),
       });
       setPack(generated);
       const cards = dueCardsOf(generated);
@@ -129,7 +140,11 @@ export default function App() {
     setError(null);
     setBusyPack(true);
     try {
-      const generated = await api.generatePack({ stretch_only: true, budget_cards: 6, budget_prompts: 2 });
+      const generated = await api.generatePack({
+        stretch_only: true,
+        budget_prompts: 2,
+        ...(stats?.remaining_today != null ? { budget_cards: Math.min(stats.remaining_today, 6) } : {}),
+      });
       setPack(generated);
       setFinished(null);
       setSessionMode("stretch");
@@ -197,12 +212,20 @@ export default function App() {
               ? sessionMode === "stretch"
                 ? "Stretch the phrase"
                 : "Make it natural"
-              : "Practice the gaps"}
+              : view === "settings"
+                ? "Settings"
+                : view === "logs"
+                  ? "Logs"
+                  : "Dashboard"}
           </h1>
           <p className="mt-1 text-sm text-ink/50">
             {view === "practice"
               ? "Read, type, then say the line out loud."
-              : "Due sentences first. Stretch waits until those are clear."}
+              : view === "memory"
+                ? "Due first. See the deck, reps, and what is waiting."
+                : view === "settings"
+                  ? "API key and daily practice amount."
+                  : "Every paste, in order."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -211,6 +234,11 @@ export default function App() {
             {currentStep}/{sessionTotal || 0}
           </span>
           <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">{liveDueCount} due</span>
+          {stats && (
+            <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+              {stats.daily_limit == null ? "Unlimited" : `${stats.remaining_today ?? 0}/${stats.daily_limit} today`}
+            </span>
+          )}
         </div>
       </header>
 
@@ -221,7 +249,7 @@ export default function App() {
             className={`rounded-full px-4 py-2 text-sm font-medium ${view === tab.id ? "bg-ink text-white" : "bg-white"}`}
             onClick={() => (tab.id === "practice" ? openPracticeTab() : setView(tab.id))}
           >
-            {tab.id === "memory" && liveDueCount > 0 ? `Review · ${liveDueCount}` : tab.label}
+            {tab.id === "memory" && liveDueCount > 0 ? `Dashboard · ${liveDueCount}` : tab.label}
           </button>
         ))}
         <button className="rounded-full bg-white px-4 py-2 text-sm font-medium" onClick={() => setIngestOpen(true)}>
@@ -324,12 +352,14 @@ export default function App() {
           <UnitInspector
             units={units}
             dueCards={dueCards}
+            stats={stats}
             now={clock}
             busy={busyPack}
             onReviewDue={(index) => void startDueReviews(index)}
             onStretch={() => void startStretch()}
           />
         )}
+        {view === "settings" && !connecting && <SettingsPanel onLimitSaved={() => void refreshUnits()} />}
       </main>
 
       <IngestModal open={ingestOpen} onClose={() => setIngestOpen(false)} onIngested={(result) => void handleIngested(result)} />

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z
   .object({
-    budget_cards: z.number().int().min(1).max(12).optional(),
+    budget_cards: z.number().int().min(1).max(200).optional(),
     budget_prompts: z.number().int().min(0).max(6).optional(),
     due_only: z.boolean().optional(),
     stretch_only: z.boolean().optional(),
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorJson("invalid budget", 400);
   const pack = await generateStudyPack(
     viewer.ownerId,
-    parsed.data?.budget_cards ?? 8,
+    parsed.data?.budget_cards,
     parsed.data?.budget_prompts ?? 3,
     { dueOnly: parsed.data?.due_only === true, stretchOnly: parsed.data?.stretch_only === true },
   );
