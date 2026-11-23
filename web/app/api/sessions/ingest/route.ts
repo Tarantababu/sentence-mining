@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireViewer } from "../../../../lib/auth";
 import { errorJson, json } from "../../../../lib/http";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
-import { ingestSession, seedIfNeeded } from "../../../../lib/store";
+import { generateStudyPack, ingestSession, seedIfNeeded } from "../../../../lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +26,11 @@ export async function POST(request: Request) {
   const parsedBody = bodySchema.safeParse(payload);
   if (!parsedBody.success) return errorJson("invalid log", 400);
   const { sessionId, parsed } = await ingestSession(viewer.ownerId, parsedBody.data.raw_log, "paste");
+  try {
+    await generateStudyPack(viewer.ownerId);
+  } catch {
+    /* pack is rebuilt on the next practice start if this fails */
+  }
   return json({
     session_id: sessionId,
     error_count: parsed.errors.length,

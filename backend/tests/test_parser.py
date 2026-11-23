@@ -70,6 +70,67 @@ FOCUS FOR NEXT LESSON
     assert any("perfect" in key or "past" in key for key in parsed.focus_unit_keys)
 
 
+def test_numbered_quoted_lesson_log() -> None:
+    log = '''YOUR SENTENCES, CORRECTED
+
+WEEKEND
+
+1. You said: "My weekend was wrong."
+Correct: "My weekend was relaxed." / "My weekend was a bit rough."
+Why: "wrong" doesn't describe a weekend; choose relaxed, busy, or rough.
+
+2. You said: "A friend came and visit."
+Correct: "A friend came to visit us."
+Why: come + to + verb for purpose.
+
+3. You said: "...if she joined to me."
+Correct: "...if she joins me."
+Why: "join" takes no preposition (same pattern as "attend the meeting"). (RECURRING)
+
+10. You said: "It's great game."
+Correct: "It's a great game."
+Why: singular countable noun needs "a". (RECURRING: articles)
+
+22. You said: "No room for any errors."
+C1 upgrade: "There's zero margin for error." / "We can't afford any mistakes."
+
+23. You said: "This week I got a lot of things to be work on."
+Correct: "This week I've got quite a lot on my plate."
+
+27. "All in all, I'm looking forward to getting the ball rolling." (PERFECT!)
+
+VOCABULARY OF THE DAY
+- catch up on: I finally caught up on some sleep this weekend.
+- have a lot on my plate: I've got a lot on my plate this week. (used well!)
+- get the ball rolling: Let's get the ball rolling on the new project. (used well!)
+
+TRACKING LIST (will be revisited)
+- Articles: a / an / the (#1 pattern)
+- No preposition after transitive verbs: join me, attend the meeting
+
+FOCUS FOR NEXT LESSON
+Articles before singular nouns, and completing every sentence.
+'''
+    parsed = parse_session_log(log)
+    assert len(parsed.errors) >= 6
+    raws = {item.raw_utterance.lower() for item in parsed.errors}
+    assert any("weekend was wrong" in item for item in raws)
+    assert any("joined to me" in item for item in raws)
+    assert any("great game" in item for item in raws)
+    assert any("no room for any errors" in item for item in raws)
+    relaxed = next(item for item in parsed.errors if "weekend was wrong" in item.raw_utterance.lower())
+    assert "relaxed" in relaxed.corrected_utterance.lower()
+    assert "/" not in relaxed.corrected_utterance
+    zero = next(item for item in parsed.errors if "no room" in item.raw_utterance.lower())
+    assert "margin for error" in zero.corrected_utterance.lower()
+    assert any(item.is_recurring for item in parsed.errors)
+    assert any("catch up" in item.item.lower() for item in parsed.vocab)
+    assert any(item.used_well and "plate" in item.item.lower() for item in parsed.vocab)
+    assert any("looking forward" in item.item.lower() or "ball rolling" in item.item.lower() for item in parsed.vocab)
+    assert parsed.tracking
+    assert parsed.focus_lines
+
+
 def test_repeat_occurrence_marks_recurring_without_flag() -> None:
     log = """
 You said: I attended to class

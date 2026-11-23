@@ -11,7 +11,9 @@ from app.services import memory_engine as mem
 from app.services.memory_engine import MemorySnapshot
 from app.services.openai_client import complete_json
 from app.services.parser import (
+    LOG_ENRICH_SYSTEM,
     ParsedSession,
+    merge_parsed_sessions,
     needs_enrichment,
     parse_session_log,
     parsed_session_from_llm,
@@ -75,12 +77,7 @@ def _persist_memory(db: Session, unit: Unit, update: mem.MemoryUpdate) -> UnitMe
 
 
 def _enrich(raw_log: str) -> ParsedSession | None:
-    system = (
-        "Extract language-session notes as JSON with keys errors, vocab, tracking, focus. "
-        "errors: [{raw_utterance, corrected_utterance, explanation, is_recurring}]. "
-        "vocab: [{item, example_usage, used_well}]. tracking and focus are string arrays."
-    )
-    payload = complete_json(system, raw_log, ParsedLogLLM)
+    payload = complete_json(LOG_ENRICH_SYSTEM, raw_log, ParsedLogLLM)
     if payload is None:
         return None
     parsed = parsed_session_from_llm(payload)
@@ -91,11 +88,12 @@ def _enrich(raw_log: str) -> ParsedSession | None:
 
 def parse_with_optional_enrichment(raw_log: str) -> ParsedSession:
     parsed = parse_session_log(raw_log)
-    if needs_enrichment(parsed, raw_log):
-        enriched = _enrich(raw_log)
-        if enriched is not None:
-            return enriched
-    return parsed
+    if not needs_enrichment(parsed, raw_log):
+        return parsed
+    enriched = _enrich(raw_log)
+    if enriched is None:
+        return parsed
+    return merge_parsed_sessions(parsed, enriched)
 
 
 def ingest_session(

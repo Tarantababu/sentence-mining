@@ -20,12 +20,13 @@ import { humanizeText } from "./humanize";
 import { generatePack } from "./material";
 import { completeJson, parsedLogSchema } from "./openai";
 import {
+  LOG_ENRICH_SYSTEM,
+  mergeParsedSessions,
   needsEnrichment,
   ParsedSession,
   parseSessionLog,
   parsedSessionFromLlm,
 } from "./parser";
-import { SAMPLE_LOG } from "./sample";
 import { getViewerSettings } from "./secrets";
 
 type UnitRow = {
@@ -146,18 +147,11 @@ async function persistMemory(ownerId: string, unitId: number, update: MemoryUpda
 async function parseWithOptionalEnrichment(ownerId: string, rawLog: string): Promise<ParsedSession> {
   const parsed = parseSessionLog(rawLog);
   if (!needsEnrichment(parsed, rawLog)) return parsed;
-  const payload = await completeJson(
-    ownerId,
-    "Extract language-session notes as JSON with keys errors, vocab, tracking, focus. " +
-      "errors: [{raw_utterance, corrected_utterance, explanation, is_recurring}]. " +
-      "vocab: [{item, example_usage, used_well}]. tracking and focus are string arrays.",
-    rawLog,
-    parsedLogSchema,
-  );
+  const payload = await completeJson(ownerId, LOG_ENRICH_SYSTEM, rawLog, parsedLogSchema);
   if (!payload) return parsed;
   const enriched = parsedSessionFromLlm(payload);
   if (!enriched.errors.length && !enriched.vocab.length) return parsed;
-  return enriched;
+  return mergeParsedSessions(parsed, enriched);
 }
 
 export async function ingestSession(
@@ -829,11 +823,4 @@ export async function submitReview(ownerId: string, cardId: number, result: Revi
 
 export async function seedIfNeeded(ownerId: string): Promise<void> {
   await ensureCatalog();
-  const count = await sql<{ n: number }>(
-    "select count(*)::int as n from sessions where owner_id = $1",
-    [ownerId],
-  );
-  if (Number(count[0]?.n ?? 0) > 0) return;
-  await ingestSession(ownerId, SAMPLE_LOG, "seed");
-  await generateStudyPack(ownerId);
 }
